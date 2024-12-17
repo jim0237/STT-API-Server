@@ -1,0 +1,26 @@
+# These owners will be the default owners for everything in
+# the repo. Unless a later match takes precedence,
+# they will be requested for review when someone opens a pull request.
+*       @owner
+
+# Python files
+*.py    @owner
+
+# Docker files
+Dockerfile      @owner
+docker-*.sh     @owner
+docker-compose.yml  @owner
+
+# GitHub Actions workflows
+.github/workflows/    @owner
+
+# Documentation
+*.md    @owner
+docs/   @owner
+
+# Web interface
+templates/      @owner
+static/        @owner
+
+# Build and deployment
+requirements.txt    @owner

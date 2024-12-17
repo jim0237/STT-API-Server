@@ -30,8 +30,11 @@ for file in "${required_files[@]}"; do
     fi
 done
 
+# Create required directories if they don't exist
+mkdir -p output uploads
+
 echo "Building Speech-to-Text Server Docker image..."
-echo "Using CUDA 12.6.3 with development tools"
+echo "Using CUDA base image for minimal size"
 
 # Build the Docker image with progress output
 docker build \
@@ -46,8 +49,8 @@ echo "Build complete!"
 echo
 echo "You can run the server with:"
 echo "docker run --gpus all -p 8000:8000 \\"
-echo "  -v \$(pwd)/output:/app/output \\"
-echo "  -v \$(pwd)/uploads:/app/uploads \\"
+echo "  -v ./output:/app/output \\"
+echo "  -v ./uploads:/app/uploads \\"
 echo "  stt-server:latest"
 echo
 echo "To verify GPU support:"
@@ -55,3 +58,11 @@ echo "docker run --gpus all --rm stt-server:latest python -c 'import torch; prin
 echo
 echo "To check server health:"
 echo "curl --insecure https://localhost:8000/health"
+echo
+echo "To test transcription:"
+echo "curl --insecure -X POST \"https://localhost:8000/transcribe\" \\"
+echo "     -F \"audio=@sample.wav\" \\"
+echo "     --output result.json"
+echo
+echo "Or visit https://localhost:8000 in your browser"
+echo "(Accept the self-signed certificate warning)"

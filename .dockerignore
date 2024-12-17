@@ -1,9 +1,45 @@
-venv/
-__pycache__/
+# Git
+.git
+.gitignore
+.github
+
+# Docker
+Dockerfile
+docker-compose.yml
+docker-build.sh
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv
+.env
+*.log
+
+# Project specific
 output/
 uploads/
-models/
 *.pem
-.git/
-.gitignore
-.DS_Store
+.cache/
+*.wav
+*.mp3
+*.ogg
+*.flac
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Documentation
+README.md
+LICENSE
+*.md
+
+# Build artifacts
+*.tar
+*.gz
+*.zip

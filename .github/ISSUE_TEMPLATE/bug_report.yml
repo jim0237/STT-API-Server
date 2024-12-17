@@ -1,0 +1,78 @@
+name: Bug Report
+description: Create a report to help us improve
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report!
+        
+        Before submitting, please check if a similar issue already exists.
+
+  - type: dropdown
+    id: installation
+    attributes:
+      label: Installation Method
+      description: How did you install the STT API Server?
+      options:
+        - Local Installation
+        - Docker (Local Build)
+        - Docker (Pre-built Image)
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: gpu
+    attributes:
+      label: GPU Usage
+      description: Are you using GPU acceleration?
+      options:
+        - Yes, with NVIDIA GPU
+        - No, CPU only
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: What version/commit are you using?
+      placeholder: e.g., latest, v1.0.0, commit hash
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Also tell us, what did you expect to happen?
+      placeholder: Tell us what you see!
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: Please copy and paste any relevant log output. This will be automatically formatted into code.
+      render: shell
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: |
+        Please provide:
+        - Operating System
+        - Python version (if local installation)
+        - Docker version (if using Docker)
+        - CUDA/GPU details (if using GPU)
+      value: |
+        - OS: 
+        - Python: 
+        - Docker: 
+        - CUDA/GPU: 
+    validations:
+      required: true

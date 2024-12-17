@@ -1,10 +1,29 @@
 # Speech-to-Text API Server
 
+[![Docker Build](https://github.com/bmv234/STT-API-Server/actions/workflows/docker-build.yml/badge.svg)](https://github.com/owner/STT-API-Server/actions/workflows/docker-build.yml)
+
 A simple REST API server that provides speech-to-text functionality using Faster Whisper, with support for file uploads and microphone recording.
 
 ## Installation Options
 
-You can install and run the server either locally or using Docker. Choose the method that best suits your needs.
+You can install and run the server either locally, using Docker, or pull the pre-built container image. Choose the method that best suits your needs.
+
+### Using Pre-built Container Image
+
+The easiest way to get started is to use our pre-built container image from GitHub Container Registry:
+
+```bash
+# Pull the image
+docker pull ghcr.io/owner/stt-api-server:latest
+
+# Run the server
+docker run -d --name stt-server \
+  --gpus all \
+  -p 8000:8000 \
+  -v ./output:/app/output \
+  -v ./uploads:/app/uploads \
+  ghcr.io/owner/stt-api-server:latest
+```
 
 ### Local Installation
 
