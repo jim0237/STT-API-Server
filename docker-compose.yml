@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   stt-server:
-    image: ghcr.io/owner/stt-api-server:latest
+    image: ghcr.io/bmv234/stt-api-server:latest
     # Uncomment the next line to build locally instead of pulling from GHCR
     # build: .
     container_name: stt-server

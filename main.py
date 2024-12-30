@@ -1,5 +1,6 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 import tempfile
 import os
 import logging
@@ -7,6 +8,23 @@ import torch
 from faster_whisper import WhisperModel
 from pydantic import BaseModel, Field
 import shutil
+from enum import Enum
+from typing import Optional, Literal
+
+# OpenAI API compatible models
+class WhisperModel(str, Enum):
+    WHISPER_1 = "whisper-1"
+
+class ErrorResponse(BaseModel):
+    error: dict = Field(..., example={
+        "message": "Error message",
+        "type": "invalid_request_error",
+        "param": None,
+        "code": None
+    })
+
+class TranscriptionResponse(BaseModel):
+    text: str = Field(..., example="The quick brown fox jumps over the lazy dog.")
 
 # Configure logging
 logging.basicConfig(
@@ -123,6 +141,81 @@ async def health_check():
         "device": "cuda" if torch.cuda.is_available() else "cpu",
         "memory_info": memory_info
     }
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.post("/v1/audio/transcriptions", response_model=TranscriptionResponse)
+async def create_transcription(
+    file: UploadFile = File(...),
+    model: WhisperModel = Form(WhisperModel.WHISPER_1),
+    language: Optional[str] = Form(None),
+    response_format: Literal["json"] = Form("json"),
+    temperature: Optional[float] = Form(0.0),
+):
+    """
+    OpenAI-compatible endpoint for audio transcription
+    """
+    try:
+        # Save uploaded file
+        audio_path = os.path.join(UPLOAD_DIR, file.filename)
+        
+        with open(audio_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+
+        # Transcribe audio
+        logger.info(f"Transcribing audio file: {file.filename}")
+        
+        # Convert OpenAI parameters to Faster Whisper parameters
+        transcribe_options = {
+            "beam_size": 5,
+            "word_timestamps": True,
+        }
+        
+        if language:
+            transcribe_options["language"] = language
+        if temperature is not None:
+            transcribe_options["temperature"] = temperature
+            
+        segments, info = model.transcribe(
+            audio_path,
+            **transcribe_options
+        )
+        
+        # Format results (OpenAI style - just the text)
+        transcription = " ".join([segment.text for segment in segments])
+        
+        # Cleanup
+        os.unlink(audio_path)
+        
+        return TranscriptionResponse(text=transcription)
+    
+    except Exception as e:
+        logger.error(f"Error transcribing audio: {str(e)}")
+        if 'audio_path' in locals() and os.path.exists(audio_path):
+            try:
+                os.unlink(audio_path)
+            except Exception as cleanup_error:
+                logger.warning(f"Failed to cleanup file after error: {str(cleanup_error)}")
+        
+        # OpenAI-style error response
+        error_response = ErrorResponse(error={
+            "message": str(e),
+            "type": "invalid_request_error" if isinstance(e, HTTPException) else "server_error",
+            "param": None,
+            "code": None
+        })
+        return JSONResponse(
+            status_code=400 if isinstance(e, HTTPException) else 500,
+            content=error_response.dict()
+        )
 
 if __name__ == "__main__":
     import uvicorn

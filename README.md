@@ -207,7 +207,49 @@ curl --insecure -X POST "https://localhost:8000/transcribe" \
 
 ## API Documentation
 
-Once the server is running, you can access the interactive API documentation at:
+The server provides two API styles:
+
+### 1. Native API
+
+The native API provides detailed transcription results including language detection and confidence scores:
+
+```bash
+# Transcribe audio file
+curl --insecure -X POST "https://localhost:8000/transcribe" \
+     -F "audio=@sample.wav"
+
+# Response format:
+{
+    "text": "transcribed text",
+    "language": "detected language code",
+    "language_probability": 0.98
+}
+```
+
+### 2. OpenAI-Compatible API
+
+The server also provides an OpenAI Whisper API-compatible endpoint for drop-in compatibility:
+
+```bash
+# OpenAI-compatible transcription
+curl --insecure -X POST "https://localhost:8000/v1/audio/transcriptions" \
+     -F file=@sample.wav \
+     -F model=whisper-1
+
+# Response format (OpenAI-compatible):
+{
+    "text": "transcribed text"
+}
+```
+
+OpenAI-compatible endpoint supports these parameters:
+- `file`: The audio file to transcribe
+- `model`: Currently supports "whisper-1"
+- `language`: Optional ISO language code
+- `response_format`: Currently supports "json"
+- `temperature`: Optional sampling temperature (0-1)
+
+You can access the interactive API documentation at:
 - Swagger UI: https://localhost:8000/docs
 - ReDoc: https://localhost:8000/redoc
 
@@ -218,6 +260,9 @@ Note: When accessing the API documentation or making API calls:
 ## Features
 
 - Speech-to-text conversion using Faster Whisper
+- Dual API support:
+  - Native API with detailed results (language detection, confidence scores)
+  - OpenAI Whisper API compatibility for drop-in replacement
 - Support for multiple audio formats
 - Microphone recording capability
 - Language detection
