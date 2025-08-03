@@ -8,6 +8,8 @@ import torch
 from faster_whisper import WhisperModel
 from pydantic import BaseModel, Field
 import shutil
+from datetime import datetime
+from typing import List
 
 # Configure logging
 logging.basicConfig(
@@ -23,6 +25,9 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 # Create temp directory for uploaded files
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# Base directory for voice notes
+VNOTES_DIR = "/app/vnotes"
 
 app = FastAPI(title="Speech-to-Text Web Interface")
 
@@ -49,9 +54,28 @@ async def startup_event():
         )
         
         logger.info(f"Faster Whisper model initialized successfully on {device}")
+        
+        # Create voice notes folder structure
+        await create_vnotes_structure()
+        
     except Exception as e:
         logger.error(f"Failed to initialize Whisper model: {str(e)}")
         raise RuntimeError("Failed to initialize STT model")
+
+async def create_vnotes_structure():
+    """Create base folder structure for voice notes"""
+    base_folders = [
+        "daily_notes",
+        "meeting_notes", 
+        "ideas",
+        "research"
+    ]
+    
+    os.makedirs(VNOTES_DIR, exist_ok=True)
+    for folder in base_folders:
+        os.makedirs(os.path.join(VNOTES_DIR, folder), exist_ok=True)
+    
+    logger.info(f"Voice notes directory structure created at {VNOTES_DIR}")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -73,6 +97,7 @@ async def read_root(request: Request):
         {"request": request}
     )
 
+# EXISTING ENDPOINTS (unchanged)
 @app.post("/transcribe")
 async def transcribe_audio(audio: UploadFile = File(...)):
     """
@@ -156,6 +181,169 @@ async def transcribe_blob(audio: UploadFile = File(...)):
             except Exception as cleanup_error:
                 logger.warning(f"Failed to cleanup file after error: {str(cleanup_error)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+# NEW VOICE NOTES ENDPOINTS
+@app.get("/browse-folders")
+async def browse_folders():
+    """Get available folders in vnotes directory"""
+    try:
+        folders = []
+        if os.path.exists(VNOTES_DIR):
+            for item in os.listdir(VNOTES_DIR):
+                item_path = os.path.join(VNOTES_DIR, item)
+                if os.path.isdir(item_path):
+                    folders.append({
+                        "name": item.replace("_", " ").title(),
+                        "value": item,
+                        "path": item_path
+                    })
+        
+        return {"folders": folders}
+    except Exception as e:
+        logger.error(f"Error browsing folders: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/transcribe-and-save")
+async def transcribe_and_save(
+    audio: UploadFile = File(...),
+    folder: str = "daily_notes"
+):
+    """Transcribe audio and save both audio file and transcription"""
+    try:
+        # Generate timestamp for filenames
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        
+        # Determine file extension
+        audio_extension = os.path.splitext(audio.filename)[1] or ".wav"
+        
+        # Create target folder path
+        target_folder = os.path.join(VNOTES_DIR, folder)
+        os.makedirs(target_folder, exist_ok=True)
+        
+        # Save audio file temporarily for transcription
+        temp_audio_path = os.path.join(UPLOAD_DIR, audio.filename)
+        with open(temp_audio_path, "wb") as f:
+            content = await audio.read()
+            f.write(content)
+
+        # Transcribe audio
+        logger.info(f"Transcribing and saving audio: {audio.filename}")
+        segments, info = model.transcribe(
+            temp_audio_path,
+            beam_size=5,
+            word_timestamps=True
+        )
+        
+        transcription = " ".join([segment.text for segment in segments])
+        
+        # Save audio file to target folder
+        audio_filename = f"{timestamp}{audio_extension}"
+        audio_save_path = os.path.join(target_folder, audio_filename)
+        shutil.copy2(temp_audio_path, audio_save_path)
+        
+        # Save transcription file
+        text_filename = f"{timestamp}.txt"
+        text_save_path = os.path.join(target_folder, text_filename)
+        with open(text_save_path, "w", encoding="utf-8") as f:
+            f.write(transcription)
+        
+        # Cleanup temp file
+        os.unlink(temp_audio_path)
+        
+        return {
+            "text": transcription,
+            "language": info.language,
+            "language_probability": info.language_probability,
+            "saved_files": {
+                "audio": audio_save_path,
+                "transcription": text_save_path
+            },
+            "timestamp": timestamp
+        }
+    
+    except Exception as e:
+        logger.error(f"Error in transcribe and save: {str(e)}")
+        if 'temp_audio_path' in locals() and os.path.exists(temp_audio_path):
+            try:
+                os.unlink(temp_audio_path)
+            except:
+                pass
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/saved-notes")
+async def get_saved_notes(folder: str = None):
+    """Get list of saved notes, optionally filtered by folder"""
+    try:
+        notes = []
+        
+        if folder:
+            # Get notes from specific folder
+            folder_path = os.path.join(VNOTES_DIR, folder)
+            if os.path.exists(folder_path):
+                notes.extend(_get_notes_from_folder(folder_path, folder))
+        else:
+            # Get notes from all folders
+            if os.path.exists(VNOTES_DIR):
+                for folder_name in os.listdir(VNOTES_DIR):
+                    folder_path = os.path.join(VNOTES_DIR, folder_name)
+                    if os.path.isdir(folder_path):
+                        notes.extend(_get_notes_from_folder(folder_path, folder_name))
+        
+        # Sort by timestamp (newest first)
+        notes.sort(key=lambda x: x["timestamp"], reverse=True)
+        
+        return {"notes": notes}
+    
+    except Exception as e:
+        logger.error(f"Error getting saved notes: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+def _get_notes_from_folder(folder_path: str, folder_name: str) -> List[dict]:
+    """Helper function to get notes from a specific folder"""
+    notes = []
+    
+    try:
+        for file in os.listdir(folder_path):
+            if file.endswith('.txt'):
+                # Extract timestamp from filename
+                timestamp_str = file.replace('.txt', '')
+                try:
+                    timestamp = datetime.strptime(timestamp_str, "%Y-%m-%d_%H-%M-%S")
+                except ValueError:
+                    continue  # Skip files that don't match timestamp format
+                
+                file_path = os.path.join(folder_path, file)
+                
+                # Read transcription content
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                except:
+                    content = "Error reading file"
+                
+                # Check for corresponding audio file
+                audio_extensions = ['.wav', '.mp3', '.m4a', '.ogg', '.webm']
+                audio_file = None
+                for ext in audio_extensions:
+                    potential_audio = os.path.join(folder_path, f"{timestamp_str}{ext}")
+                    if os.path.exists(potential_audio):
+                        audio_file = f"{timestamp_str}{ext}"
+                        break
+                
+                notes.append({
+                    "timestamp": timestamp.isoformat(),
+                    "folder": folder_name,
+                    "folder_display": folder_name.replace("_", " ").title(),
+                    "transcription_file": file,
+                    "audio_file": audio_file,
+                    "content_preview": content[:100] + "..." if len(content) > 100 else content,
+                    "full_content": content
+                })
+    
+    except Exception as e:
+        logger.error(f"Error reading folder {folder_path}: {str(e)}")
+    
+    return notes
 
 @app.get("/health")
 async def health_check():
