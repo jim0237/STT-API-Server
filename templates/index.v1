@@ -630,23 +630,13 @@
                     folderSelect.appendChild(option);
                 });
 
-                // FIX: Set default selection and verify it works
+                // Set default selection
                 if (data.folders.length > 0) {
                     folderSelect.value = data.folders[0].value;
-                    console.log('Default folder set to:', folderSelect.value); // Debug logging
                 }
             } catch (error) {
                 console.error('Error loading folders:', error);
                 showStatus('Error loading folders', 'error');
-                
-                // FIX: Fallback folder options if API fails
-                folderSelect.innerHTML = `
-                    <option value="daily_notes">📁 Daily Notes</option>
-                    <option value="meeting_notes">📁 Meeting Notes</option>
-                    <option value="ideas">📁 Ideas</option>
-                    <option value="research">📁 Research</option>
-                `;
-                folderSelect.value = 'daily_notes';
             }
         }
 
@@ -761,17 +751,7 @@
             try {
                 const formData = new FormData();
                 formData.append('audio', audioBlob, filename);
-                
-                // FIX: Ensure folder selection is properly read and validated
-                const selectedFolder = folderSelect.value;
-                console.log('Selected folder:', selectedFolder); // Debug logging
-                
-                if (!selectedFolder || selectedFolder === '') {
-                    console.warn('No folder selected, using default');
-                    formData.append('folder', 'daily_notes');
-                } else {
-                    formData.append('folder', selectedFolder);
-                }
+                formData.append('folder', folderSelect.value);
 
                 const response = await fetch('/transcribe-and-save', {
                     method: 'POST',
@@ -789,8 +769,7 @@
                 recordStatus.textContent = 'Ready to record';
                 recordTimer.textContent = '00:00';
                 
-                // FIX: Show which folder was actually used
-                showStatus(`✅ Transcription saved to ${data.folder_used || selectedFolder}`, 'success');
+                showStatus('✅ Transcription saved successfully', 'success');
                 await loadRecentNotes(); // Refresh notes list
                 
             } catch (error) {
@@ -959,3 +938,4 @@
     </script>
 </body>
 </html>
+                

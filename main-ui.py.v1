@@ -187,37 +187,18 @@ async def transcribe_blob(audio: UploadFile = File(...)):
 async def browse_folders():
     """Get available folders in vnotes directory"""
     try:
-        # FIX: Return consistent folder structure
-        folders = [
-            {
-                "name": "Daily Notes",
-                "value": "daily_notes",
-                "path": os.path.join(VNOTES_DIR, "daily_notes")
-            },
-            {
-                "name": "Meeting Notes", 
-                "value": "meeting_notes",
-                "path": os.path.join(VNOTES_DIR, "meeting_notes")
-            },
-            {
-                "name": "Ideas",
-                "value": "ideas", 
-                "path": os.path.join(VNOTES_DIR, "ideas")
-            },
-            {
-                "name": "Research",
-                "value": "research",
-                "path": os.path.join(VNOTES_DIR, "research")
-            }
-        ]
+        folders = []
+        if os.path.exists(VNOTES_DIR):
+            for item in os.listdir(VNOTES_DIR):
+                item_path = os.path.join(VNOTES_DIR, item)
+                if os.path.isdir(item_path):
+                    folders.append({
+                        "name": item.replace("_", " ").title(),
+                        "value": item,
+                        "path": item_path
+                    })
         
-        # FIX: Ensure all folders exist
-        for folder in folders:
-            os.makedirs(folder["path"], exist_ok=True)
-        
-        logger.info(f"Available folders: {[f['value'] for f in folders]}")
         return {"folders": folders}
-        
     except Exception as e:
         logger.error(f"Error browsing folders: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -225,29 +206,19 @@ async def browse_folders():
 @app.post("/transcribe-and-save")
 async def transcribe_and_save(
     audio: UploadFile = File(...),
-    folder: str = Form("daily_notes")  # FIX: Use Form() instead of default parameter
+    folder: str = Form("daily_notes")
 ):
     """Transcribe audio and save both audio file and transcription"""
     try:
-        # FIX: Add logging to debug folder parameter
-        logger.info(f"Received transcription request for folder: '{folder}'")
-        
-        # FIX: Validate folder parameter
-        valid_folders = ["daily_notes", "meeting_notes", "ideas", "research"]
-        if folder not in valid_folders:
-            logger.warning(f"Invalid folder '{folder}', using 'daily_notes' instead")
-            folder = "daily_notes"
-        
         # Generate timestamp for filenames
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         
         # Determine file extension
         audio_extension = os.path.splitext(audio.filename)[1] or ".wav"
         
-        # FIX: Create target folder path with proper validation
+        # Create target folder path
         target_folder = os.path.join(VNOTES_DIR, folder)
         os.makedirs(target_folder, exist_ok=True)
-        logger.info(f"Saving to target folder: {target_folder}")
         
         # Save audio file temporarily for transcription
         temp_audio_path = os.path.join(UPLOAD_DIR, audio.filename)
@@ -269,24 +240,20 @@ async def transcribe_and_save(
         audio_filename = f"{timestamp}{audio_extension}"
         audio_save_path = os.path.join(target_folder, audio_filename)
         shutil.copy2(temp_audio_path, audio_save_path)
-        logger.info(f"Audio saved to: {audio_save_path}")
         
         # Save transcription file
         text_filename = f"{timestamp}.txt"
         text_save_path = os.path.join(target_folder, text_filename)
         with open(text_save_path, "w", encoding="utf-8") as f:
             f.write(transcription)
-        logger.info(f"Transcription saved to: {text_save_path}")
         
         # Cleanup temp file
         os.unlink(temp_audio_path)
         
-        # FIX: Return which folder was actually used
         return {
             "text": transcription,
             "language": info.language,
             "language_probability": info.language_probability,
-            "folder_used": folder,  # FIX: Include this in response
             "saved_files": {
                 "audio": audio_save_path,
                 "transcription": text_save_path
