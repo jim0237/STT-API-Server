@@ -62,6 +62,24 @@
             font-size: 1.1rem;
         }
 
+        .user-info {
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 20px;
+            border: 1px solid var(--border);
+            text-align: center;
+        }
+
+        .user-code {
+            font-family: 'Courier New', monospace;
+            background: var(--bg-secondary);
+            padding: 4px 8px;
+            border-radius: 4px;
+            color: var(--accent-primary);
+            font-weight: bold;
+        }
+
         .settings-panel {
             background: var(--bg-card);
             border-radius: 16px;
@@ -491,6 +509,13 @@
             <div class="subtitle">Secure voice transcription with auto-save</div>
         </div>
 
+        <div class="user-info">
+            <div style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 8px;">
+                Your Personal Voice Notes
+            </div>
+            <div>User Code: <span class="user-code" id="userCodeDisplay">Loading...</span></div>
+        </div>
+
         <div class="settings-panel">
             <div class="settings-title">
                 ⚙️ Quick Settings
@@ -577,6 +602,7 @@
         let isRecording = false;
         let currentTranscription = null;
         let availableFolders = [];
+        let currentUserCode = null;
 
         // DOM elements
         const recordBtn = document.getElementById('recordBtn');
@@ -591,14 +617,43 @@
         const autoSaveToggle = document.getElementById('autoSaveToggle');
         const notesList = document.getElementById('notesList');
         const notesSpinner = document.getElementById('notesSpinner');
+        const userCodeDisplay = document.getElementById('userCodeDisplay');
 
         // Action buttons
         const copyBtn = document.getElementById('copyBtn');
         const reRecordBtn = document.getElementById('reRecordBtn');
         const discardBtn = document.getElementById('discardBtn');
 
+        // Extract user code from URL
+        function getUserCodeFromURL() {
+            const pathParts = window.location.pathname.split('/');
+            if (pathParts.length >= 3 && pathParts[1] === 'user') {
+                return pathParts[2];
+            }
+            return null;
+        }
+
+        // Build user-specific API URLs
+        function buildAPIURL(endpoint) {
+            if (!currentUserCode) {
+                throw new Error('User code not available');
+            }
+            return `/user/${currentUserCode}${endpoint}`;
+        }
+
         // Initialize app
         document.addEventListener('DOMContentLoaded', async () => {
+            // Get user code from URL
+            currentUserCode = getUserCodeFromURL();
+            if (!currentUserCode) {
+                showStatus('Error: Invalid user URL', 'error');
+                return;
+            }
+
+            // Display user code
+            userCodeDisplay.textContent = currentUserCode;
+
+            // Initialize components
             await loadFolders();
             await setupMicrophone();
             await loadRecentNotes();
@@ -612,13 +667,17 @@
             folderSelect.addEventListener('change', saveSettings);
             autoSaveToggle.addEventListener('change', saveSettings);
 
-            showStatus('Ready to record', 'success');
+            showStatus(`Ready to record as ${currentUserCode}`, 'success');
         });
 
-        // Load available folders
+        // Load available folders for user
         async function loadFolders() {
             try {
-                const response = await fetch('/browse-folders');
+                const response = await fetch(buildAPIURL('/browse-folders'));
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
                 const data = await response.json();
                 availableFolders = data.folders;
                 
@@ -630,16 +689,16 @@
                     folderSelect.appendChild(option);
                 });
 
-                // FIX: Set default selection and verify it works
+                // Set default selection and verify it works
                 if (data.folders.length > 0) {
                     folderSelect.value = data.folders[0].value;
-                    console.log('Default folder set to:', folderSelect.value); // Debug logging
+                    console.log(`User ${currentUserCode} - Default folder set to:`, folderSelect.value);
                 }
             } catch (error) {
                 console.error('Error loading folders:', error);
                 showStatus('Error loading folders', 'error');
                 
-                // FIX: Fallback folder options if API fails
+                // Fallback folder options if API fails
                 folderSelect.innerHTML = `
                     <option value="daily_notes">📁 Daily Notes</option>
                     <option value="meeting_notes">📁 Meeting Notes</option>
@@ -762,18 +821,18 @@
                 const formData = new FormData();
                 formData.append('audio', audioBlob, filename);
                 
-                // FIX: Ensure folder selection is properly read and validated
+                // Ensure folder selection is properly read and validated
                 const selectedFolder = folderSelect.value;
-                console.log('Selected folder:', selectedFolder); // Debug logging
+                console.log(`User ${currentUserCode} - Selected folder:`, selectedFolder);
                 
                 if (!selectedFolder || selectedFolder === '') {
-                    console.warn('No folder selected, using default');
+                    console.warn(`User ${currentUserCode} - No folder selected, using default`);
                     formData.append('folder', 'daily_notes');
                 } else {
                     formData.append('folder', selectedFolder);
                 }
 
-                const response = await fetch('/transcribe-and-save', {
+                const response = await fetch(buildAPIURL('/transcribe-and-save'), {
                     method: 'POST',
                     body: formData
                 });
@@ -789,7 +848,7 @@
                 recordStatus.textContent = 'Ready to record';
                 recordTimer.textContent = '00:00';
                 
-                // FIX: Show which folder was actually used
+                // Show which folder was actually used
                 showStatus(`✅ Transcription saved to ${data.folder_used || selectedFolder}`, 'success');
                 await loadRecentNotes(); // Refresh notes list
                 
@@ -840,12 +899,16 @@
             showStatus('Transcription discarded', 'success');
         }
 
-        // Load recent notes
+        // Load recent notes for user
         async function loadRecentNotes() {
             try {
                 notesSpinner.style.display = 'block';
                 
-                const response = await fetch('/saved-notes');
+                const response = await fetch(buildAPIURL('/saved-notes'));
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
                 const data = await response.json();
                 
                 notesList.innerHTML = '';
@@ -869,7 +932,7 @@
                 notesList.innerHTML = `
                     <div class="note-item">
                         <div style="text-align: center; color: var(--accent-danger); padding: 20px;">
-                            Error loading notes
+                            Error loading notes: ${error.message}
                         </div>
                     </div>
                 `;
@@ -907,17 +970,18 @@
         function saveSettings() {
             const settings = {
                 folder: folderSelect.value,
-                autoSave: autoSaveToggle.value === 'true'
+                autoSave: autoSaveToggle.value === 'true',
+                userCode: currentUserCode
             };
             
-            localStorage.setItem('voiceNotesSettings', JSON.stringify(settings));
+            localStorage.setItem(`voiceNotesSettings_${currentUserCode}`, JSON.stringify(settings));
             showStatus('Settings saved', 'success');
         }
 
         // Load settings
         function loadSettings() {
             try {
-                const settings = JSON.parse(localStorage.getItem('voiceNotesSettings'));
+                const settings = JSON.parse(localStorage.getItem(`voiceNotesSettings_${currentUserCode}`));
                 if (settings) {
                     if (settings.folder) folderSelect.value = settings.folder;
                     autoSaveToggle.value = settings.autoSave ? 'true' : 'false';

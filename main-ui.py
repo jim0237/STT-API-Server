@@ -37,6 +37,46 @@ templates = Jinja2Templates(directory="templates")
 # Initialize Whisper model
 model = None
 
+# USER MANAGEMENT FUNCTIONS
+def load_user_mapping():
+    """Load user code to directory mapping from file"""
+    users_file = os.path.join(VNOTES_DIR, "users.txt")
+    user_mapping = {}
+    
+    if os.path.exists(users_file):
+        try:
+            with open(users_file, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and '=' in line:
+                        code, directory = line.split('=', 1)
+                        user_mapping[code.strip()] = directory.strip()
+            logger.info(f"Loaded {len(user_mapping)} users from mapping file")
+        except Exception as e:
+            logger.error(f"Error loading user mapping: {str(e)}")
+    else:
+        logger.warning(f"User mapping file not found: {users_file}")
+    
+    return user_mapping
+
+def get_user_directory(user_code: str) -> str:
+    """Get the directory path for a user code"""
+    user_mapping = load_user_mapping()
+    
+    if user_code not in user_mapping:
+        raise HTTPException(status_code=404, detail=f"User code '{user_code}' not found")
+    
+    user_dir = os.path.join(VNOTES_DIR, "users", user_mapping[user_code])
+    
+    # Ensure user directory and subdirectories exist
+    base_folders = ["daily_notes", "meeting_notes", "ideas", "research"]
+    for folder in base_folders:
+        folder_path = os.path.join(user_dir, folder)
+        os.makedirs(folder_path, exist_ok=True)
+    
+    logger.info(f"User {user_code} mapped to directory: {user_dir}")
+    return user_dir
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize the Whisper model on startup"""
@@ -64,16 +104,18 @@ async def startup_event():
 
 async def create_vnotes_structure():
     """Create base folder structure for voice notes"""
-    base_folders = [
-        "daily_notes",
-        "meeting_notes", 
-        "ideas",
-        "research"
-    ]
-    
+    # Create main directories
     os.makedirs(VNOTES_DIR, exist_ok=True)
-    for folder in base_folders:
-        os.makedirs(os.path.join(VNOTES_DIR, folder), exist_ok=True)
+    os.makedirs(os.path.join(VNOTES_DIR, "users"), exist_ok=True)
+    
+    # Create users.txt file if it doesn't exist
+    users_file = os.path.join(VNOTES_DIR, "users.txt")
+    if not os.path.exists(users_file):
+        with open(users_file, 'w') as f:
+            f.write("# User code mapping file\n")
+            f.write("# Format: USERCODE=directory-name\n")
+            f.write("# Example: VFRDZ3=jbeasley-VFRDZ3\n")
+        logger.info(f"Created user mapping file: {users_file}")
     
     logger.info(f"Voice notes directory structure created at {VNOTES_DIR}")
 
@@ -89,20 +131,214 @@ async def shutdown_event():
     except Exception as e:
         logger.error(f"Error cleaning up files: {str(e)}")
 
+# ORIGINAL ROUTES (Keep for backward compatibility during transition)
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
-    """Render the web interface"""
-    return templates.TemplateResponse(
-        "index.html",
-        {"request": request}
-    )
+    """Render the web interface - redirect to user selection or admin"""
+    return HTMLResponse("""
+    <html>
+    <head><title>Voice Notes</title></head>
+    <body style="font-family: Arial, sans-serif; padding: 40px; text-align: center;">
+        <h1>🎤 Voice Notes</h1>
+        <p>Please use your personal user URL:</p>
+        <p><code>https://100.82.13.191:8060/user/YOUR_CODE</code></p>
+        <p><em>Contact administrator for your user code.</em></p>
+    </body>
+    </html>
+    """)
 
-# EXISTING ENDPOINTS (unchanged)
+# NEW USER-SPECIFIC ROUTES
+@app.get("/user/{user_code}", response_class=HTMLResponse)
+async def user_home(request: Request, user_code: str):
+    """Render the web interface for a specific user"""
+    try:
+        # Validate user exists
+        get_user_directory(user_code)
+        
+        # Render template with user context
+        return templates.TemplateResponse(
+            "index.html",
+            {"request": request, "user_code": user_code}
+        )
+    except HTTPException:
+        return HTMLResponse(f"""
+        <html>
+        <head><title>User Not Found</title></head>
+        <body style="font-family: Arial, sans-serif; padding: 40px; text-align: center;">
+            <h1>❌ User Not Found</h1>
+            <p>User code '<strong>{user_code}</strong>' is not valid.</p>
+            <p>Please check your URL or contact your administrator.</p>
+        </body>
+        </html>
+        """, status_code=404)
+
+@app.get("/user/{user_code}/browse-folders")
+async def user_browse_folders(user_code: str):
+    """Get available folders for a specific user"""
+    try:
+        user_dir = get_user_directory(user_code)
+        
+        # Return consistent folder structure
+        folders = [
+            {
+                "name": "Daily Notes",
+                "value": "daily_notes",
+                "path": os.path.join(user_dir, "daily_notes")
+            },
+            {
+                "name": "Meeting Notes", 
+                "value": "meeting_notes",
+                "path": os.path.join(user_dir, "meeting_notes")
+            },
+            {
+                "name": "Ideas",
+                "value": "ideas", 
+                "path": os.path.join(user_dir, "ideas")
+            },
+            {
+                "name": "Research",
+                "value": "research",
+                "path": os.path.join(user_dir, "research")
+            }
+        ]
+        
+        # Ensure all folders exist
+        for folder in folders:
+            os.makedirs(folder["path"], exist_ok=True)
+        
+        logger.info(f"User {user_code} - Available folders: {[f['value'] for f in folders]}")
+        return {"folders": folders}
+        
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logger.error(f"Error browsing folders for user {user_code}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/user/{user_code}/transcribe-and-save")
+async def user_transcribe_and_save(
+    user_code: str,
+    audio: UploadFile = File(...),
+    folder: str = Form("daily_notes")
+):
+    """Transcribe audio and save to user's specific directory"""
+    try:
+        # Get user directory
+        user_dir = get_user_directory(user_code)
+        
+        # Add logging to debug folder parameter
+        logger.info(f"User {user_code} - Received transcription request for folder: '{folder}'")
+        
+        # Validate folder parameter
+        valid_folders = ["daily_notes", "meeting_notes", "ideas", "research"]
+        if folder not in valid_folders:
+            logger.warning(f"User {user_code} - Invalid folder '{folder}', using 'daily_notes' instead")
+            folder = "daily_notes"
+        
+        # Generate timestamp for filenames
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        
+        # Determine file extension
+        audio_extension = os.path.splitext(audio.filename)[1] or ".wav"
+        
+        # Create target folder path within user directory
+        target_folder = os.path.join(user_dir, folder)
+        os.makedirs(target_folder, exist_ok=True)
+        logger.info(f"User {user_code} - Saving to target folder: {target_folder}")
+        
+        # Save audio file temporarily for transcription
+        temp_audio_path = os.path.join(UPLOAD_DIR, f"{user_code}_{audio.filename}")
+        with open(temp_audio_path, "wb") as f:
+            content = await audio.read()
+            f.write(content)
+
+        # Transcribe audio
+        logger.info(f"User {user_code} - Transcribing and saving audio: {audio.filename}")
+        segments, info = model.transcribe(
+            temp_audio_path,
+            beam_size=5,
+            word_timestamps=True
+        )
+        
+        transcription = " ".join([segment.text for segment in segments])
+        
+        # Save audio file to target folder
+        audio_filename = f"{timestamp}{audio_extension}"
+        audio_save_path = os.path.join(target_folder, audio_filename)
+        shutil.copy2(temp_audio_path, audio_save_path)
+        logger.info(f"User {user_code} - Audio saved to: {audio_save_path}")
+        
+        # Save transcription file
+        text_filename = f"{timestamp}.txt"
+        text_save_path = os.path.join(target_folder, text_filename)
+        with open(text_save_path, "w", encoding="utf-8") as f:
+            f.write(transcription)
+        logger.info(f"User {user_code} - Transcription saved to: {text_save_path}")
+        
+        # Cleanup temp file
+        os.unlink(temp_audio_path)
+        
+        # Return result with user context
+        return {
+            "text": transcription,
+            "language": info.language,
+            "language_probability": info.language_probability,
+            "folder_used": folder,
+            "user_code": user_code,
+            "saved_files": {
+                "audio": audio_save_path,
+                "transcription": text_save_path
+            },
+            "timestamp": timestamp
+        }
+    
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logger.error(f"User {user_code} - Error in transcribe and save: {str(e)}")
+        if 'temp_audio_path' in locals() and os.path.exists(temp_audio_path):
+            try:
+                os.unlink(temp_audio_path)
+            except:
+                pass
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/user/{user_code}/saved-notes")
+async def user_get_saved_notes(user_code: str, folder: str = None):
+    """Get list of saved notes for a specific user"""
+    try:
+        user_dir = get_user_directory(user_code)
+        notes = []
+        
+        if folder:
+            # Get notes from specific folder
+            folder_path = os.path.join(user_dir, folder)
+            if os.path.exists(folder_path):
+                notes.extend(_get_notes_from_folder(folder_path, folder))
+        else:
+            # Get notes from all user's folders
+            base_folders = ["daily_notes", "meeting_notes", "ideas", "research"]
+            for folder_name in base_folders:
+                folder_path = os.path.join(user_dir, folder_name)
+                if os.path.exists(folder_path):
+                    notes.extend(_get_notes_from_folder(folder_path, folder_name))
+        
+        # Sort by timestamp (newest first)
+        notes.sort(key=lambda x: x["timestamp"], reverse=True)
+        
+        logger.info(f"User {user_code} - Retrieved {len(notes)} saved notes")
+        return {"notes": notes, "user_code": user_code}
+    
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logger.error(f"User {user_code} - Error getting saved notes: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# LEGACY ROUTES (Keep for backward compatibility)
 @app.post("/transcribe")
 async def transcribe_audio(audio: UploadFile = File(...)):
-    """
-    Transcribe audio file using Faster Whisper
-    """
+    """Legacy transcribe endpoint - transcribe only, no saving"""
     try:
         # Save uploaded file
         audio_path = os.path.join(UPLOAD_DIR, audio.filename)
@@ -112,7 +348,7 @@ async def transcribe_audio(audio: UploadFile = File(...)):
             f.write(content)
 
         # Transcribe audio
-        logger.info(f"Transcribing audio file: {audio.filename}")
+        logger.info(f"Legacy transcribe - Transcribing audio file: {audio.filename}")
         segments, info = model.transcribe(
             audio_path,
             beam_size=5,
@@ -142,9 +378,7 @@ async def transcribe_audio(audio: UploadFile = File(...)):
 
 @app.post("/transcribe-blob")
 async def transcribe_blob(audio: UploadFile = File(...)):
-    """
-    Transcribe audio blob from microphone recording
-    """
+    """Legacy transcribe blob endpoint"""
     try:
         # Save uploaded blob
         audio_path = os.path.join(UPLOAD_DIR, "recorded_audio.wav")
@@ -154,7 +388,7 @@ async def transcribe_blob(audio: UploadFile = File(...)):
             f.write(content)
 
         # Transcribe audio
-        logger.info("Transcribing recorded audio")
+        logger.info("Legacy transcribe blob - Transcribing recorded audio")
         segments, info = model.transcribe(
             audio_path,
             beam_size=5,
@@ -180,155 +414,6 @@ async def transcribe_blob(audio: UploadFile = File(...)):
                 os.unlink(audio_path)
             except Exception as cleanup_error:
                 logger.warning(f"Failed to cleanup file after error: {str(cleanup_error)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-# NEW VOICE NOTES ENDPOINTS
-@app.get("/browse-folders")
-async def browse_folders():
-    """Get available folders in vnotes directory"""
-    try:
-        # FIX: Return consistent folder structure
-        folders = [
-            {
-                "name": "Daily Notes",
-                "value": "daily_notes",
-                "path": os.path.join(VNOTES_DIR, "daily_notes")
-            },
-            {
-                "name": "Meeting Notes", 
-                "value": "meeting_notes",
-                "path": os.path.join(VNOTES_DIR, "meeting_notes")
-            },
-            {
-                "name": "Ideas",
-                "value": "ideas", 
-                "path": os.path.join(VNOTES_DIR, "ideas")
-            },
-            {
-                "name": "Research",
-                "value": "research",
-                "path": os.path.join(VNOTES_DIR, "research")
-            }
-        ]
-        
-        # FIX: Ensure all folders exist
-        for folder in folders:
-            os.makedirs(folder["path"], exist_ok=True)
-        
-        logger.info(f"Available folders: {[f['value'] for f in folders]}")
-        return {"folders": folders}
-        
-    except Exception as e:
-        logger.error(f"Error browsing folders: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/transcribe-and-save")
-async def transcribe_and_save(
-    audio: UploadFile = File(...),
-    folder: str = Form("daily_notes")  # FIX: Use Form() instead of default parameter
-):
-    """Transcribe audio and save both audio file and transcription"""
-    try:
-        # FIX: Add logging to debug folder parameter
-        logger.info(f"Received transcription request for folder: '{folder}'")
-        
-        # FIX: Validate folder parameter
-        valid_folders = ["daily_notes", "meeting_notes", "ideas", "research"]
-        if folder not in valid_folders:
-            logger.warning(f"Invalid folder '{folder}', using 'daily_notes' instead")
-            folder = "daily_notes"
-        
-        # Generate timestamp for filenames
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        
-        # Determine file extension
-        audio_extension = os.path.splitext(audio.filename)[1] or ".wav"
-        
-        # FIX: Create target folder path with proper validation
-        target_folder = os.path.join(VNOTES_DIR, folder)
-        os.makedirs(target_folder, exist_ok=True)
-        logger.info(f"Saving to target folder: {target_folder}")
-        
-        # Save audio file temporarily for transcription
-        temp_audio_path = os.path.join(UPLOAD_DIR, audio.filename)
-        with open(temp_audio_path, "wb") as f:
-            content = await audio.read()
-            f.write(content)
-
-        # Transcribe audio
-        logger.info(f"Transcribing and saving audio: {audio.filename}")
-        segments, info = model.transcribe(
-            temp_audio_path,
-            beam_size=5,
-            word_timestamps=True
-        )
-        
-        transcription = " ".join([segment.text for segment in segments])
-        
-        # Save audio file to target folder
-        audio_filename = f"{timestamp}{audio_extension}"
-        audio_save_path = os.path.join(target_folder, audio_filename)
-        shutil.copy2(temp_audio_path, audio_save_path)
-        logger.info(f"Audio saved to: {audio_save_path}")
-        
-        # Save transcription file
-        text_filename = f"{timestamp}.txt"
-        text_save_path = os.path.join(target_folder, text_filename)
-        with open(text_save_path, "w", encoding="utf-8") as f:
-            f.write(transcription)
-        logger.info(f"Transcription saved to: {text_save_path}")
-        
-        # Cleanup temp file
-        os.unlink(temp_audio_path)
-        
-        # FIX: Return which folder was actually used
-        return {
-            "text": transcription,
-            "language": info.language,
-            "language_probability": info.language_probability,
-            "folder_used": folder,  # FIX: Include this in response
-            "saved_files": {
-                "audio": audio_save_path,
-                "transcription": text_save_path
-            },
-            "timestamp": timestamp
-        }
-    
-    except Exception as e:
-        logger.error(f"Error in transcribe and save: {str(e)}")
-        if 'temp_audio_path' in locals() and os.path.exists(temp_audio_path):
-            try:
-                os.unlink(temp_audio_path)
-            except:
-                pass
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/saved-notes")
-async def get_saved_notes(folder: str = None):
-    """Get list of saved notes, optionally filtered by folder"""
-    try:
-        notes = []
-        
-        if folder:
-            # Get notes from specific folder
-            folder_path = os.path.join(VNOTES_DIR, folder)
-            if os.path.exists(folder_path):
-                notes.extend(_get_notes_from_folder(folder_path, folder))
-        else:
-            # Get notes from all folders
-            if os.path.exists(VNOTES_DIR):
-                for folder_name in os.listdir(VNOTES_DIR):
-                    folder_path = os.path.join(VNOTES_DIR, folder_name)
-                    if os.path.isdir(folder_path):
-                        notes.extend(_get_notes_from_folder(folder_path, folder_name))
-        
-        # Sort by timestamp (newest first)
-        notes.sort(key=lambda x: x["timestamp"], reverse=True)
-        
-        return {"notes": notes}
-    
-    except Exception as e:
-        logger.error(f"Error getting saved notes: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 def _get_notes_from_folder(folder_path: str, folder_name: str) -> List[dict]:
@@ -370,7 +455,8 @@ def _get_notes_from_folder(folder_path: str, folder_name: str) -> List[dict]:
                     "transcription_file": file,
                     "audio_file": audio_file,
                     "content_preview": content[:100] + "..." if len(content) > 100 else content,
-                    "full_content": content
+                    "full_content": content,
+                    "language_probability": 0.95  # Default since we don't store this separately
                 })
     
     except Exception as e:
@@ -392,11 +478,16 @@ async def health_check():
     else:
         memory_info = {"gpu_status": "No GPU available"}
 
+    # Add user count to health check
+    user_mapping = load_user_mapping()
+    
     return {
         "status": "healthy",
         "model_loaded": model is not None,
         "device": "cuda" if torch.cuda.is_available() else "cpu",
-        "memory_info": memory_info
+        "memory_info": memory_info,
+        "user_count": len(user_mapping),
+        "users": list(user_mapping.keys()) if user_mapping else []
     }
 
 if __name__ == "__main__":
