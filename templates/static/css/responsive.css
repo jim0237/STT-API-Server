@@ -1,0 +1,39 @@
+/* --------------------------------------------------
+   responsive.css — Mobile and responsive design
+   Purpose: Device-specific styling and breakpoints
+   Depends on: variables.css, layout.css, components.css
+   -------------------------------------------------- */
+
+/* Mobile devices (phones) */
+@media (max-width: 480px) {
+    .logo { font-size: 2rem; }
+    .subtitle { font-size: 1rem; }
+    .settings-panel { padding: 16px; margin-bottom: 20px; }
+    .main-card { padding: 20px; border-radius: 16px; }
+    .record-button { width: 90px; height: 90px; font-size: 1.8rem; }
+    .record-timer { font-size: 1.3rem; }
+    .btn { justify-content: center; padding: 14px 20px; font-size: 1rem; }
+    .transcription-text { font-size: 16px; min-height: 100px; }
+    .note-item { padding: 12px; }
+    .recent-notes { padding: 16px; margin-top: 20px; }
+}
+
+/* Tablet devices (portrait) */
+@media (min-width: 481px) and (max-width: 768px) {
+    .main-card { padding: 30px; }
+    .record-button { width: 110px; height: 110px; font-size: 2.2rem; }
+    .btn { justify-content: center; }
+}
+
+/* Desktop and large screens */
+@media (min-width: 1200px) {
+    .main-card { padding: 50px; }
+    .record-button { width: 140px; height: 140px; font-size: 3rem; }
+}
+
+/* Touch devices (smartphones and tablets) */
+@media (hover: none) and (pointer: coarse) {
+    .btn { min-height: 44px; }
+    .record-button { min-width: 88px; min-height: 88px; }
+    .setting-input { padding: 16px 12px; font-size: 16px; }
+}

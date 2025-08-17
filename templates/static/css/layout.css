@@ -1,0 +1,154 @@
+/* --------------------------------------------------
+   layout.css — Base layout, containers, and positioning
+   Purpose: Site-wide layout structure and positioning
+   Depends on: static/css/variables.css for CSS variables
+   -------------------------------------------------- */
+
+/* CSS Reset */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+/* Base page layout */
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+    color: var(--text-primary);
+    min-height: 100vh;
+    padding: 20px;
+}
+
+/* Centered content container */
+.container {
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+/* Header layout */
+.header {
+    text-align: center;
+    margin-bottom: 40px;
+}
+
+/* Grid systems */
+.settings-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+
+.action-buttons {
+    display: flex;
+    gap: 12px;
+    margin-top: 20px;
+    flex-wrap: wrap;
+}
+
+/* Section spacing and positioning */
+.record-section {
+    text-align: center;
+    margin-bottom: 40px;
+}
+
+.upload-option {
+    margin-top: 24px;
+}
+
+.transcription-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+
+.recent-notes {
+    margin-top: 30px;
+}
+
+.recent-notes-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.note-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.setting-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.settings-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.wave-animation {
+    display: none;
+    justify-content: center;
+    align-items: center;
+    gap: 4px;
+    margin: 20px 0;
+}
+
+.recording-active .wave-animation {
+    display: flex;
+}
+
+/* Fixed positioning elements */
+.status-bar {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+}
+
+.main-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
+}
+
+.main-card {
+    position: relative;
+    overflow: hidden;
+}
+
+.record-button {
+    position: relative;
+}
+
+/* Responsive breakpoints for layout */
+@media (max-width: 480px) {
+    body { padding: 10px; }
+    .container { padding: 0; }
+    .settings-grid { grid-template-columns: 1fr; gap: 16px; }
+    .action-buttons { flex-direction: column; gap: 8px; }
+    .status-bar { bottom: 10px; right: 10px; left: 10px; text-align: center; }
+}
+
+@media (min-width: 481px) and (max-width: 768px) {
+    .container { padding: 0 10px; }
+    .settings-grid { grid-template-columns: 1fr; gap: 16px; }
+    .action-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+}
+
+@media (min-width: 1200px) {
+    .container { max-width: 1000px; }
+    .settings-grid { grid-template-columns: 1fr 1fr 1fr; }
+    .action-buttons { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+}
