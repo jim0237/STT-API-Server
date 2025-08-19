@@ -2,15 +2,18 @@ version: '3.8'
 
 services:
   stt-server:
-    image: ghcr.io/bmv234/stt-api-server:latest
-    # Uncomment the next line to build locally instead of pulling from GHCR
-    # build: .
+    # Use the latest image from brett's GitHub Container Registry using Github actions
+    # Change to my github (jim0237) if I want to build from my github registry
+    #image: ghcr.io/bmv234/stt-api-server:latest 
+    # Currently Building locally from your source (GitHub Actions disabled)
+    build: .
     container_name: stt-server
     ports:
       - "8000:8000"
     volumes:
       - ./output:/app/output
       - ./uploads:/app/uploads
+      - ./voice-notes:/app/vnotes  # Voice notes storage
     deploy:
       resources:
         reservations:
