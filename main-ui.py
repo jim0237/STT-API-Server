@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 import shutil
 from datetime import datetime
 from typing import List
+from pydub import AudioSegment  # ADD for prototype
 
 # Configure logging
 logging.basicConfig(
@@ -29,6 +30,10 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # Base directory for voice notes
 VNOTES_DIR = "/app/vnotes"
+
+# ADD: Prototype checkpoint directory
+CHECKPOINT_DIR = "/tmp/voice_notes_checkpoints"
+os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 
 app = FastAPI(title="Speech-to-Text Web Interface")
 
@@ -143,7 +148,7 @@ async def read_root(request: Request):
     <html>
     <head><title>Voice Notes</title></head>
     <body style="font-family: Arial, sans-serif; padding: 40px; text-align: center;">
-        <h1>ðŸŽ¤ Voice Notes</h1>
+        <h1>🎤 Voice Notes</h1>
         <p>Please use your personal user URL:</p>
         <p><code>https://100.82.13.191:8060/user/YOUR_CODE</code></p>
         <p><em>Contact administrator for your user code.</em></p>
@@ -169,7 +174,7 @@ async def user_home(request: Request, user_code: str):
         <html>
         <head><title>User Not Found</title></head>
         <body style="font-family: Arial, sans-serif; padding: 40px; text-align: center;">
-            <h1>âŒ User Not Found</h1>
+            <h1>⚠ User Not Found</h1>
             <p>User code '<strong>{user_code}</strong>' is not valid.</p>
             <p>Please check your URL or contact your administrator.</p>
         </body>
@@ -467,6 +472,113 @@ def _get_notes_from_folder(folder_path: str, folder_name: str) -> List[dict]:
         logger.error(f"Error reading folder {folder_path}: {str(e)}")
     
     return notes
+
+# ADD: PROTOTYPE ENDPOINTS
+@app.post("/prototype/checkpoint")
+async def save_checkpoint_prototype(
+    session_id: str = Form(...),
+    chunk_number: int = Form(...),
+    audio: UploadFile = File(...)
+):
+    """
+    Prototype checkpoint endpoint - saves audio chunks for testing
+    """
+    try:
+        # Create session directory if not exists
+        session_dir = os.path.join(CHECKPOINT_DIR, session_id)
+        os.makedirs(session_dir, exist_ok=True)
+        
+        # Save chunk with sequence number
+        chunk_filename = f"chunk_{chunk_number:03d}_{audio.filename}"
+        chunk_path = os.path.join(session_dir, chunk_filename)
+        
+        # Save uploaded audio chunk
+        with open(chunk_path, "wb") as f:
+            content = await audio.read()
+            f.write(content)
+        
+        # Log for debugging
+        logger.info(f"Saved checkpoint: {chunk_path} ({len(content)} bytes)")
+        
+        return {
+            "status": "saved",
+            "chunk_id": f"{session_id}_{chunk_number}",
+            "file_path": chunk_path,
+            "size_bytes": len(content),
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Checkpoint save failed: {str(e)}")
+        return {"status": "failed", "error": str(e)}
+
+@app.post("/prototype/concatenate")
+async def concatenate_chunks_prototype(session_id: str = Form(...)):
+    """
+    Prototype concatenation endpoint - combines chunks for testing
+    """
+    try:
+        session_dir = os.path.join(CHECKPOINT_DIR, session_id)
+        
+        if not os.path.exists(session_dir):
+            raise Exception(f"Session directory not found: {session_id}")
+        
+        # Find all chunk files
+        chunk_files = []
+        for file in os.listdir(session_dir):
+            if file.startswith("chunk_"):
+                chunk_files.append(os.path.join(session_dir, file))
+        
+        if not chunk_files:
+            raise Exception("No chunks found")
+        
+        # Sort by chunk number
+        chunk_files.sort()
+        
+        # Concatenate using pydub
+        combined = AudioSegment.empty()
+        for chunk_file in chunk_files:
+            chunk_audio = AudioSegment.from_file(chunk_file)
+            combined += chunk_audio
+        
+        # Save concatenated result
+        output_path = os.path.join(session_dir, "concatenated.wav")
+        combined.export(output_path, format="wav")
+        
+        logger.info(f"Concatenated {len(chunk_files)} chunks to {output_path}")
+        
+        return {
+            "status": "success",
+            "output_file": output_path,
+            "chunk_count": len(chunk_files),
+            "duration_ms": len(combined),
+            "file_size": os.path.getsize(output_path)
+        }
+        
+    except Exception as e:
+        logger.error(f"Concatenation failed: {str(e)}")
+        return {"status": "failed", "error": str(e)}
+
+@app.get("/prototype/sessions")
+async def list_checkpoint_sessions():
+    """List all prototype checkpoint sessions for debugging"""
+    try:
+        sessions = []
+        if os.path.exists(CHECKPOINT_DIR):
+            for session_id in os.listdir(CHECKPOINT_DIR):
+                session_path = os.path.join(CHECKPOINT_DIR, session_id)
+                if os.path.isdir(session_path):
+                    chunk_count = len([f for f in os.listdir(session_path) 
+                                     if f.startswith("chunk_")])
+                    sessions.append({
+                        "session_id": session_id,
+                        "chunk_count": chunk_count,
+                        "created": datetime.fromtimestamp(os.path.getctime(session_path)).isoformat()
+                    })
+        
+        return {"sessions": sessions}
+    except Exception as e:
+        return {"error": str(e)}
 
 @app.get("/health")
 async def health_check():

@@ -5,4 +5,3 @@ python-multipart
 faster-whisper
 torch
 jinja2
-pydub

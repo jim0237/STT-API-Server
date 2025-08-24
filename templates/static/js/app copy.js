@@ -110,26 +110,6 @@ const VoiceNotesApp = {
         elements.folderSelect.addEventListener('change', () => this.handleSettingsChange());
         elements.autoSaveToggle.addEventListener('change', () => this.handleSettingsChange());
         
-        // ADD: Prototype controls
-        document.getElementById('enablePrototypeBtn').addEventListener('click', () => {
-            VoiceNotesRecording.enablePrototypeMode();
-            document.getElementById('startPrototypeRecordingBtn').disabled = false;
-            document.getElementById('testConcatenationBtn').disabled = false;
-            this.updatePrototypeStatus('Prototype mode enabled');
-        });
-        
-        document.getElementById('startPrototypeRecordingBtn').addEventListener('click', () => {
-            this.startPrototypeRecording();
-        });
-        
-        document.getElementById('testConcatenationBtn').addEventListener('click', async () => {
-            await VoiceNotesRecording.testConcatenation();
-        });
-        
-        document.getElementById('listSessionsBtn').addEventListener('click', async () => {
-            await this.listPrototypeSessions();
-        });
-        
         // Keyboard shortcuts
         if (VoiceNotesConfig.features.keyboardShortcuts) {
             this.initializeKeyboardShortcuts();
@@ -223,54 +203,6 @@ const VoiceNotesApp = {
             this.saveUserSettings();
         } catch (error) {
             console.error('Settings save failed:', error);
-        }
-    },
-
-    // ADD: Prototype helper methods
-    async startPrototypeRecording() {
-        // Record for exactly 60 seconds in 20-second chunks (3 chunks)
-        this.updatePrototypeStatus('Starting 60-second test recording (3x20s chunks)...');
-        
-        // Start recording in prototype mode
-        if (VoiceNotesRecording.canRecord()) {
-            await VoiceNotesRecording.startRecording();
-            
-            // Stop after 60 seconds
-            setTimeout(() => {
-                if (VoiceNotesRecording.isRecording) {
-                    VoiceNotesRecording.stopRecording();
-                    this.updatePrototypeStatus('60-second test recording completed');
-                }
-            }, 60000);
-        } else {
-            this.updatePrototypeStatus('Cannot start recording - check microphone access');
-        }
-    },
-
-    async listPrototypeSessions() {
-        try {
-            const response = await fetch('/prototype/sessions');
-            const data = await response.json();
-            
-            let statusText = 'Prototype Sessions:\n';
-            if (data.sessions && data.sessions.length > 0) {
-                data.sessions.forEach(session => {
-                    statusText += `- ${session.session_id}: ${session.chunk_count} chunks (${session.created})\n`;
-                });
-            } else {
-                statusText += 'No sessions found';
-            }
-            
-            this.updatePrototypeStatus(statusText);
-        } catch (error) {
-            this.updatePrototypeStatus('Error listing sessions: ' + error.message);
-        }
-    },
-
-    updatePrototypeStatus(message) {
-        const statusDiv = document.getElementById('prototypeStatus');
-        if (statusDiv) {
-            statusDiv.textContent = message;
         }
     },
 
