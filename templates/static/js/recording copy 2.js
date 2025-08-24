@@ -10,7 +10,7 @@ const VoiceNotesRecording = {
     isRecording: false,
     isInitialized: false,
 
-    // Prototype properties
+    // ADD: Prototype properties
     prototypeMode: false,
     sessionId: null,
     chunkCounter: 0,
@@ -63,13 +63,13 @@ const VoiceNotesRecording = {
         return 'audio/webm';
     },
 
-    // Setup MediaRecorder event handlers (with prototype checkpoint logic)
+    // Setup MediaRecorder event handlers (MODIFIED for prototype)
     setupRecorderEvents() {
         this.mediaRecorder.ondataavailable = async (event) => {
             if (event.data.size > 0) {
                 this.recordedChunks.push(event.data);
                 
-                // Prototype checkpoint logic
+                // ADD: Prototype checkpoint logic
                 if (this.prototypeMode) {
                     await this.uploadCheckpoint(event.data, this.chunkCounter++);
                 }
@@ -143,7 +143,7 @@ const VoiceNotesRecording = {
             this.isRecording = true;
             this.startTime = Date.now();
 
-            // Start MediaRecorder - modified for prototype
+            // Start MediaRecorder - MODIFIED for prototype
             const chunkInterval = this.prototypeMode ? 20000 : 10; // 20 seconds for prototype, 10ms for normal
             this.mediaRecorder.start(chunkInterval);
             
@@ -335,7 +335,7 @@ const VoiceNotesRecording = {
         }
     },
 
-    // Enable prototype mode
+    // ADD: Enable prototype mode
     enablePrototypeMode() {
         this.prototypeMode = true;
         this.sessionId = 'proto_' + Date.now();
@@ -344,7 +344,7 @@ const VoiceNotesRecording = {
         console.log('Prototype mode enabled, session:', this.sessionId);
     },
 
-    // Upload checkpoint method
+    // ADD: Upload checkpoint method
     async uploadCheckpoint(audioBlob, chunkNumber) {
         if (!this.prototypeMode) return;
         
@@ -373,8 +373,42 @@ const VoiceNotesRecording = {
         }
     },
 
-    // REMOVED: testConcatenation method (no longer needed)
-    // The old testConcatenation method has been removed since we no longer use audio concatenation
+    // ADD: Test concatenation method
+    async testConcatenation() {
+        if (!this.prototypeMode || !this.sessionId) {
+            console.error('No prototype session to concatenate');
+            return;
+        }
+        
+        try {
+            VoiceNotesUI.showStatus('Testing concatenation...', 'success');
+            
+            const formData = new FormData();
+            formData.append('session_id', this.sessionId);
+            
+            const response = await fetch('/prototype/concatenate', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const result = await response.json();
+            console.log('Concatenation result:', result);
+            
+            if (result.status === 'success') {
+                VoiceNotesUI.showStatus(
+                    `✅ Concatenated ${result.chunk_count} chunks (${result.duration_ms}ms)`, 
+                    'success'
+                );
+            } else {
+                VoiceNotesUI.showStatus(`❌ Concatenation failed: ${result.error}`, 'error');
+            }
+            
+            return result;
+        } catch (error) {
+            console.error('Concatenation test failed:', error);
+            VoiceNotesUI.showStatus('Concatenation test failed', 'error');
+        }
+    },
 
     // Cleanup resources
     cleanup() {
@@ -410,3 +444,4 @@ const VoiceNotesRecording = {
 
 // Export for use in other modules
 window.VoiceNotesRecording = VoiceNotesRecording;
+            

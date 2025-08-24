@@ -10,12 +10,6 @@ const VoiceNotesRecording = {
     isRecording: false,
     isInitialized: false,
 
-    // Prototype properties
-    prototypeMode: false,
-    sessionId: null,
-    chunkCounter: 0,
-    checkpointResults: [],
-
     // Initialize microphone access
     async initialize() {
         try {
@@ -63,16 +57,11 @@ const VoiceNotesRecording = {
         return 'audio/webm';
     },
 
-    // Setup MediaRecorder event handlers (with prototype checkpoint logic)
+    // Setup MediaRecorder event handlers
     setupRecorderEvents() {
-        this.mediaRecorder.ondataavailable = async (event) => {
+        this.mediaRecorder.ondataavailable = (event) => {
             if (event.data.size > 0) {
                 this.recordedChunks.push(event.data);
-                
-                // Prototype checkpoint logic
-                if (this.prototypeMode) {
-                    await this.uploadCheckpoint(event.data, this.chunkCounter++);
-                }
             }
         };
 
@@ -143,9 +132,8 @@ const VoiceNotesRecording = {
             this.isRecording = true;
             this.startTime = Date.now();
 
-            // Start MediaRecorder - modified for prototype
-            const chunkInterval = this.prototypeMode ? 20000 : 10; // 20 seconds for prototype, 10ms for normal
-            this.mediaRecorder.start(chunkInterval);
+            // Start MediaRecorder
+            this.mediaRecorder.start(10); // Collect data every 10ms
             
             // Update UI
             VoiceNotesUI.setRecordingState(true);
@@ -335,47 +323,6 @@ const VoiceNotesRecording = {
         }
     },
 
-    // Enable prototype mode
-    enablePrototypeMode() {
-        this.prototypeMode = true;
-        this.sessionId = 'proto_' + Date.now();
-        this.chunkCounter = 0;
-        this.checkpointResults = [];
-        console.log('Prototype mode enabled, session:', this.sessionId);
-    },
-
-    // Upload checkpoint method
-    async uploadCheckpoint(audioBlob, chunkNumber) {
-        if (!this.prototypeMode) return;
-        
-        try {
-            const formData = new FormData();
-            formData.append('session_id', this.sessionId);
-            formData.append('chunk_number', chunkNumber);
-            formData.append('audio', audioBlob, `chunk_${chunkNumber}.wav`);
-            
-            const response = await fetch('/prototype/checkpoint', {
-                method: 'POST',
-                body: formData
-            });
-            
-            const result = await response.json();
-            this.checkpointResults.push(result);
-            
-            console.log(`Checkpoint ${chunkNumber} saved:`, result);
-            VoiceNotesUI.showStatus(`Saved checkpoint ${chunkNumber}`, 'success');
-            
-            return result;
-        } catch (error) {
-            console.error('Checkpoint upload failed:', error);
-            VoiceNotesUI.showStatus(`Checkpoint ${chunkNumber} failed`, 'error');
-            return null;
-        }
-    },
-
-    // REMOVED: testConcatenation method (no longer needed)
-    // The old testConcatenation method has been removed since we no longer use audio concatenation
-
     // Cleanup resources
     cleanup() {
         if (this.isRecording) {
@@ -400,10 +347,7 @@ const VoiceNotesRecording = {
             isInitialized: this.isInitialized,
             duration: this.getRecordingDuration(),
             chunksCount: this.recordedChunks.length,
-            recordedSize: this.recordedChunks.reduce((total, chunk) => total + chunk.size, 0),
-            prototypeMode: this.prototypeMode,
-            sessionId: this.sessionId,
-            checkpointCount: this.checkpointResults.length
+            recordedSize: this.recordedChunks.reduce((total, chunk) => total + chunk.size, 0)
         };
     }
 };

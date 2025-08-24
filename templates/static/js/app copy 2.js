@@ -110,12 +110,11 @@ const VoiceNotesApp = {
         elements.folderSelect.addEventListener('change', () => this.handleSettingsChange());
         elements.autoSaveToggle.addEventListener('change', () => this.handleSettingsChange());
         
-        // UPDATED: Prototype controls with new buttons
+        // ADD: Prototype controls
         document.getElementById('enablePrototypeBtn').addEventListener('click', () => {
             VoiceNotesRecording.enablePrototypeMode();
             document.getElementById('startPrototypeRecordingBtn').disabled = false;
-            document.getElementById('transcribeChunksBtn').disabled = false;
-            document.getElementById('assembleTextBtn').disabled = false;
+            document.getElementById('testConcatenationBtn').disabled = false;
             this.updatePrototypeStatus('Prototype mode enabled');
         });
         
@@ -123,14 +122,8 @@ const VoiceNotesApp = {
             this.startPrototypeRecording();
         });
         
-        // NEW: Transcribe chunks button
-        document.getElementById('transcribeChunksBtn').addEventListener('click', async () => {
-            await this.transcribeAllChunks();
-        });
-        
-        // NEW: Assemble text button
-        document.getElementById('assembleTextBtn').addEventListener('click', async () => {
-            await this.assembleSessionText();
+        document.getElementById('testConcatenationBtn').addEventListener('click', async () => {
+            await VoiceNotesRecording.testConcatenation();
         });
         
         document.getElementById('listSessionsBtn').addEventListener('click', async () => {
@@ -233,7 +226,7 @@ const VoiceNotesApp = {
         }
     },
 
-    // Prototype helper methods
+    // ADD: Prototype helper methods
     async startPrototypeRecording() {
         // Record for exactly 60 seconds in 20-second chunks (3 chunks)
         this.updatePrototypeStatus('Starting 60-second test recording (3x20s chunks)...');
@@ -246,126 +239,11 @@ const VoiceNotesApp = {
             setTimeout(() => {
                 if (VoiceNotesRecording.isRecording) {
                     VoiceNotesRecording.stopRecording();
-                    this.updatePrototypeStatus('60-second test recording completed\nNext: Click "Transcribe Chunks"');
+                    this.updatePrototypeStatus('60-second test recording completed');
                 }
             }, 60000);
         } else {
             this.updatePrototypeStatus('Cannot start recording - check microphone access');
-        }
-    },
-
-    // NEW: Transcribe all chunks in current session
-    async transcribeAllChunks() {
-        if (!VoiceNotesRecording.prototypeMode || !VoiceNotesRecording.sessionId) {
-            this.updatePrototypeStatus('No prototype session to transcribe');
-            return;
-        }
-
-        try {
-            this.updatePrototypeStatus('Transcribing chunks with Whisper...');
-            
-            const sessionId = VoiceNotesRecording.sessionId;
-            const chunkCount = VoiceNotesRecording.checkpointResults.length;
-            
-            let transcriptionResults = [];
-            
-            // Transcribe each chunk individually
-            for (let i = 0; i < chunkCount; i++) {
-                this.updatePrototypeStatus(`Transcribing chunk ${i + 1} of ${chunkCount}...`);
-                
-                const formData = new FormData();
-                formData.append('session_id', sessionId);
-                formData.append('chunk_number', i);
-                
-                const response = await fetch('/prototype/transcribe-chunk', {
-                    method: 'POST',
-                    body: formData
-                });
-                
-                const result = await response.json();
-                transcriptionResults.push(result);
-                
-                if (result.status === 'success') {
-                    console.log(`Chunk ${i} transcribed: "${result.transcription.substring(0, 50)}..."`);
-                } else {
-                    console.error(`Chunk ${i} transcription failed:`, result.error);
-                }
-            }
-            
-            // Display results
-            const successCount = transcriptionResults.filter(r => r.status === 'success').length;
-            const failCount = transcriptionResults.filter(r => r.status === 'failed').length;
-            
-            let statusText = `Transcription complete: ${successCount} success, ${failCount} failed\n\n`;
-            
-            transcriptionResults.forEach((result, index) => {
-                if (result.status === 'success') {
-                    const preview = result.transcription.length > 50 
-                        ? result.transcription.substring(0, 50) + '...'
-                        : result.transcription;
-                    statusText += `Chunk ${index}: "${preview}" (${result.transcription.length} chars)\n`;
-                } else {
-                    statusText += `Chunk ${index}: FAILED - ${result.error}\n`;
-                }
-            });
-            
-            statusText += '\nNext: Click "Assemble Text" to combine chunks';
-            this.updatePrototypeStatus(statusText);
-            
-        } catch (error) {
-            console.error('Chunk transcription failed:', error);
-            this.updatePrototypeStatus('Chunk transcription failed: ' + error.message);
-        }
-    },
-
-    // NEW: Assemble session text from individual transcriptions
-    async assembleSessionText() {
-        if (!VoiceNotesRecording.prototypeMode || !VoiceNotesRecording.sessionId) {
-            this.updatePrototypeStatus('No prototype session to assemble');
-            return;
-        }
-
-        try {
-            this.updatePrototypeStatus('Assembling final text...');
-            
-            const formData = new FormData();
-            formData.append('session_id', VoiceNotesRecording.sessionId);
-            
-            const response = await fetch('/prototype/assemble-session', {
-                method: 'POST',
-                body: formData
-            });
-            
-            const result = await response.json();
-            console.log('Assembly result:', result);
-            
-            if (result.status === 'success') {
-                // Display final transcription in the main UI
-                VoiceNotesUI.elements.transcriptionText.value = result.final_transcription;
-                VoiceNotesUI.elements.confidenceBadge.textContent = `${result.chunk_count} chunks combined`;
-                VoiceNotesUI.elements.transcriptionSection.classList.add('visible');
-                
-                // Update prototype status
-                let statusText = `✅ SUCCESS: Combined ${result.chunk_count} chunks\n`;
-                statusText += `Final length: ${result.total_length} characters\n\n`;
-                statusText += 'Individual chunks:\n';
-                
-                result.chunk_details.forEach((chunk, index) => {
-                    statusText += `${index + 1}. ${chunk.preview} (${chunk.length} chars)\n`;
-                });
-                
-                statusText += '\n📝 Final transcription displayed above. You can copy/edit it.';
-                this.updatePrototypeStatus(statusText);
-                
-                VoiceNotesUI.showStatus('✅ Prototype test complete - check transcription above', 'success');
-                
-            } else {
-                this.updatePrototypeStatus(`❌ Assembly failed: ${result.error}`);
-            }
-            
-        } catch (error) {
-            console.error('Text assembly failed:', error);
-            this.updatePrototypeStatus('Text assembly failed: ' + error.message);
         }
     },
 
@@ -377,10 +255,7 @@ const VoiceNotesApp = {
             let statusText = 'Prototype Sessions:\n';
             if (data.sessions && data.sessions.length > 0) {
                 data.sessions.forEach(session => {
-                    statusText += `- ${session.session_id}:\n`;
-                    statusText += `  Audio chunks: ${session.chunk_count}\n`;
-                    statusText += `  Transcriptions: ${session.transcript_count}\n`;
-                    statusText += `  Created: ${session.created}\n\n`;
+                    statusText += `- ${session.session_id}: ${session.chunk_count} chunks (${session.created})\n`;
                 });
             } else {
                 statusText += 'No sessions found';

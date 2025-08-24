@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 import shutil
 from datetime import datetime
 from typing import List
+from pydub import AudioSegment  # ADD for prototype
 
 # Configure logging
 logging.basicConfig(
@@ -30,7 +31,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 # Base directory for voice notes
 VNOTES_DIR = "/app/vnotes"
 
-# Prototype checkpoint directory
+# ADD: Prototype checkpoint directory
 CHECKPOINT_DIR = "/tmp/voice_notes_checkpoints"
 os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 
@@ -472,7 +473,7 @@ def _get_notes_from_folder(folder_path: str, folder_name: str) -> List[dict]:
     
     return notes
 
-# PROTOTYPE ENDPOINTS (FIXED - No concatenation, individual chunk transcription)
+# ADD: PROTOTYPE ENDPOINTS
 @app.post("/prototype/checkpoint")
 async def save_checkpoint_prototype(
     session_id: str = Form(...),
@@ -511,13 +512,10 @@ async def save_checkpoint_prototype(
         logger.error(f"Checkpoint save failed: {str(e)}")
         return {"status": "failed", "error": str(e)}
 
-@app.post("/prototype/transcribe-chunk")
-async def transcribe_chunk_prototype(
-    session_id: str = Form(...),
-    chunk_number: int = Form(...)
-):
+@app.post("/prototype/concatenate")
+async def concatenate_chunks_prototype(session_id: str = Form(...)):
     """
-    Prototype endpoint - transcribe individual chunk using Whisper
+    Prototype concatenation endpoint - combines chunks for testing
     """
     try:
         session_dir = os.path.join(CHECKPOINT_DIR, session_id)
@@ -525,112 +523,40 @@ async def transcribe_chunk_prototype(
         if not os.path.exists(session_dir):
             raise Exception(f"Session directory not found: {session_id}")
         
-        # Find the specific chunk file
-        chunk_files = [f for f in os.listdir(session_dir) 
-                      if f.startswith(f"chunk_{chunk_number:03d}_")]
+        # Find all chunk files
+        chunk_files = []
+        for file in os.listdir(session_dir):
+            if file.startswith("chunk_"):
+                chunk_files.append(os.path.join(session_dir, file))
         
         if not chunk_files:
-            raise Exception(f"Chunk {chunk_number} not found")
-        
-        chunk_path = os.path.join(session_dir, chunk_files[0])
-        
-        # Transcribe using Whisper
-        logger.info(f"Transcribing chunk: {chunk_path}")
-        segments, info = model.transcribe(
-            chunk_path,
-            beam_size=5,
-            word_timestamps=True
-        )
-        
-        transcription = " ".join([segment.text for segment in segments])
-        
-        # Save transcription as text file
-        text_filename = f"chunk_{chunk_number:03d}_transcript.txt"
-        text_path = os.path.join(session_dir, text_filename)
-        
-        with open(text_path, "w", encoding="utf-8") as f:
-            f.write(transcription)
-        
-        logger.info(f"Transcribed chunk {chunk_number}: {len(transcription)} characters")
-        
-        return {
-            "status": "success",
-            "chunk_number": chunk_number,
-            "transcription": transcription,
-            "language": info.language,
-            "language_probability": info.language_probability,
-            "audio_file": chunk_files[0],
-            "text_file": text_filename,
-            "char_count": len(transcription)
-        }
-        
-    except Exception as e:
-        logger.error(f"Chunk transcription failed: {str(e)}")
-        return {"status": "failed", "error": str(e), "chunk_number": chunk_number}
-
-@app.post("/prototype/assemble-session")
-async def assemble_session_prototype(session_id: str = Form(...)):
-    """
-    Prototype endpoint - assemble all chunk transcriptions into final text
-    """
-    try:
-        session_dir = os.path.join(CHECKPOINT_DIR, session_id)
-        
-        if not os.path.exists(session_dir):
-            raise Exception(f"Session directory not found: {session_id}")
-        
-        # Find all transcript files
-        transcript_files = []
-        for file in os.listdir(session_dir):
-            if file.endswith("_transcript.txt"):
-                transcript_files.append(file)
-        
-        if not transcript_files:
-            raise Exception("No transcription files found")
+            raise Exception("No chunks found")
         
         # Sort by chunk number
-        transcript_files.sort()
+        chunk_files.sort()
         
-        # Read and combine all transcriptions
-        combined_text = []
-        chunk_details = []
+        # Concatenate using pydub
+        combined = AudioSegment.empty()
+        for chunk_file in chunk_files:
+            chunk_audio = AudioSegment.from_file(chunk_file)
+            combined += chunk_audio
         
-        for transcript_file in transcript_files:
-            transcript_path = os.path.join(session_dir, transcript_file)
-            
-            with open(transcript_path, "r", encoding="utf-8") as f:
-                chunk_text = f.read().strip()
-                combined_text.append(chunk_text)
-                
-                chunk_details.append({
-                    "file": transcript_file,
-                    "length": len(chunk_text),
-                    "preview": chunk_text[:50] + "..." if len(chunk_text) > 50 else chunk_text
-                })
+        # Save concatenated result
+        output_path = os.path.join(session_dir, "concatenated.wav")
+        combined.export(output_path, format="wav")
         
-        # Combine with spaces
-        final_text = " ".join(combined_text)
-        
-        # Save combined result
-        final_filename = "final_transcription.txt"
-        final_path = os.path.join(session_dir, final_filename)
-        
-        with open(final_path, "w", encoding="utf-8") as f:
-            f.write(final_text)
-        
-        logger.info(f"Assembled {len(transcript_files)} chunks into final transcription")
+        logger.info(f"Concatenated {len(chunk_files)} chunks to {output_path}")
         
         return {
             "status": "success",
-            "final_transcription": final_text,
-            "chunk_count": len(transcript_files),
-            "total_length": len(final_text),
-            "chunk_details": chunk_details,
-            "final_file": final_filename
+            "output_file": output_path,
+            "chunk_count": len(chunk_files),
+            "duration_ms": len(combined),
+            "file_size": os.path.getsize(output_path)
         }
         
     except Exception as e:
-        logger.error(f"Session assembly failed: {str(e)}")
+        logger.error(f"Concatenation failed: {str(e)}")
         return {"status": "failed", "error": str(e)}
 
 @app.get("/prototype/sessions")
@@ -643,14 +569,10 @@ async def list_checkpoint_sessions():
                 session_path = os.path.join(CHECKPOINT_DIR, session_id)
                 if os.path.isdir(session_path):
                     chunk_count = len([f for f in os.listdir(session_path) 
-                                     if f.startswith("chunk_") and not f.endswith(".txt")])
-                    transcript_count = len([f for f in os.listdir(session_path) 
-                                          if f.endswith("_transcript.txt")])
-                    
+                                     if f.startswith("chunk_")])
                     sessions.append({
                         "session_id": session_id,
                         "chunk_count": chunk_count,
-                        "transcript_count": transcript_count,
                         "created": datetime.fromtimestamp(os.path.getctime(session_path)).isoformat()
                     })
         

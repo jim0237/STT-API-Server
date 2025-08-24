@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File, Request, Form
 from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
 import tempfile
 import os
 import logging
@@ -30,6 +31,9 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 VNOTES_DIR = "/app/vnotes"
 
 app = FastAPI(title="Speech-to-Text Web Interface")
+
+# Mount static files for modular frontend
+app.mount("/static", StaticFiles(directory="templates/static"), name="static")
 
 # Initialize templates
 templates = Jinja2Templates(directory="templates")
@@ -139,7 +143,7 @@ async def read_root(request: Request):
     <html>
     <head><title>Voice Notes</title></head>
     <body style="font-family: Arial, sans-serif; padding: 40px; text-align: center;">
-        <h1>🎤 Voice Notes</h1>
+        <h1>ðŸŽ¤ Voice Notes</h1>
         <p>Please use your personal user URL:</p>
         <p><code>https://100.82.13.191:8060/user/YOUR_CODE</code></p>
         <p><em>Contact administrator for your user code.</em></p>
@@ -165,7 +169,7 @@ async def user_home(request: Request, user_code: str):
         <html>
         <head><title>User Not Found</title></head>
         <body style="font-family: Arial, sans-serif; padding: 40px; text-align: center;">
-            <h1>❌ User Not Found</h1>
+            <h1>âŒ User Not Found</h1>
             <p>User code '<strong>{user_code}</strong>' is not valid.</p>
             <p>Please check your URL or contact your administrator.</p>
         </body>
