@@ -11,11 +11,6 @@
     <link rel="stylesheet" href="/static/css/responsive.css">
     
     <title>Voice Notes</title>
-    
-    <!-- Add Silero VAD Library Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.14.0/dist/ort.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.7/dist/bundle.min.js"></script>
-    
 </head>
 <body>
     <div class="container">
@@ -98,8 +93,6 @@
                 <button class="btn btn-secondary" id="transcribeChunksBtn" disabled>Transcribe Chunks</button>
                 <button class="btn btn-secondary" id="assembleTextBtn" disabled>Assemble Text</button>
                 <button class="btn btn-secondary" id="listSessionsBtn">List Sessions</button>
-                <!-- Add VAD Test Button for Phase 1 -->
-                <button class="btn btn-secondary" id="testVADBtn">Test VAD</button>
             </div>
             <div id="prototypeStatus" style="margin-top: 10px; font-family: monospace; font-size: 0.9rem; color: #ccc; white-space: pre-wrap;"></div>
         </div>

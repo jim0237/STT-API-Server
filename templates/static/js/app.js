@@ -142,6 +142,11 @@ const VoiceNotesApp = {
             this.initializeKeyboardShortcuts();
         }
         
+    // NEW: VAD Test button
+        document.getElementById('testVADBtn').addEventListener('click', async () => {
+        await VoiceNotesRecording.testVAD();
+});
+
         console.log('Event listeners initialized');
     },
 

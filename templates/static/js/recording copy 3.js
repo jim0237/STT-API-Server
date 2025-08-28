@@ -16,12 +16,7 @@ const VoiceNotesRecording = {
     chunkCounter: 0,
     checkpointResults: [],
 
-    // VAD Properties (NEW)
-    vad: null,
-    vadInitialized: false,
-    audioContext: null,
-
-    // Initialize microphone access and VAD
+    // Initialize microphone access
     async initialize() {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -36,104 +31,15 @@ const VoiceNotesRecording = {
             });
             
             this.setupRecorderEvents();
-            
-            // Initialize VAD
-            await this.initializeVAD();
-            
             this.isInitialized = true;
             
             VoiceNotesUI.setProcessingState(false);
-            VoiceNotesUI.showStatus('Microphone and VAD ready', 'success');
+            VoiceNotesUI.showStatus('Microphone ready', 'success');
             
             return true;
         } catch (error) {
             console.error('Microphone setup failed:', error);
             this.handleMicrophoneError(error);
-            return false;
-        }
-    },
-
-    // Initialize Silero VAD (NEW)
-    async initializeVAD() {
-        try {
-            // Check if VAD library is loaded
-            if (typeof vad === 'undefined') {
-                throw new Error('Silero VAD library not loaded. Check script imports.');
-            }
-
-            console.log('Initializing Silero VAD...');
-            
-            // Initialize audio context
-            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            
-            // Initialize VAD with event handlers
-            this.vad = await vad.MicVAD.new({
-                onSpeechStart: () => {
-                    console.log('VAD: Speech started');
-                    VoiceNotesUI.showStatus('VAD: Speech detected', 'success');
-                },
-                onSpeechEnd: (audio) => {
-                    console.log('VAD: Speech ended, audio length:', audio.length);
-                    VoiceNotesUI.showStatus('VAD: Speech segment captured', 'success');
-                    
-                    // For now, just log the audio data - we'll process it in Phase 3
-                    this.handleVADSegment(audio);
-                },
-                onVADMisfire: () => {
-                    console.log('VAD: Misfire (false positive)');
-                }
-            });
-
-            this.vadInitialized = true;
-            console.log('Silero VAD initialized successfully');
-            
-        } catch (error) {
-            console.error('VAD initialization failed:', error);
-            VoiceNotesUI.showStatus('VAD initialization failed: ' + error.message, 'error');
-            throw error;
-        }
-    },
-
-    // Handle VAD segment (Phase 1: Just logging)
-    handleVADSegment(audioData) {
-        console.log('VAD Segment Details:', {
-            length: audioData.length,
-            sampleRate: this.audioContext?.sampleRate || 'unknown',
-            duration: `${(audioData.length / (this.audioContext?.sampleRate || 16000)).toFixed(2)}s`,
-            type: audioData.constructor.name
-        });
-        
-        // Phase 1: Just show in UI that we received the segment
-        VoiceNotesUI.showStatus(`VAD captured ${(audioData.length / (this.audioContext?.sampleRate || 16000)).toFixed(1)}s segment`, 'success');
-    },
-
-    // Test VAD functionality (NEW)
-    async testVAD() {
-        if (!this.vadInitialized) {
-            VoiceNotesUI.showStatus('VAD not initialized', 'error');
-            return false;
-        }
-
-        try {
-            console.log('Testing VAD...');
-            VoiceNotesUI.showStatus('Testing VAD - speak into microphone', 'success');
-            
-            await this.vad.start();
-            console.log('VAD test started - speak to test speech detection');
-            
-            // Auto-stop test after 10 seconds
-            setTimeout(() => {
-                if (this.vad) {
-                    this.vad.pause();
-                    console.log('VAD test completed');
-                    VoiceNotesUI.showStatus('VAD test completed - check console for events', 'success');
-                }
-            }, 10000);
-            
-            return true;
-        } catch (error) {
-            console.error('VAD test failed:', error);
-            VoiceNotesUI.showStatus('VAD test failed: ' + error.message, 'error');
             return false;
         }
     },
@@ -153,6 +59,7 @@ const VoiceNotesRecording = {
             }
         }
         
+        // Fallback to default
         return 'audio/webm';
     },
 
@@ -322,7 +229,7 @@ const VoiceNotesRecording = {
             
             // Display results
             VoiceNotesUI.displayTranscription(result);
-            VoiceNotesUI.showStatus(`Recording saved to ${result.folder_used || selectedFolder}`, 'success');
+            VoiceNotesUI.showStatus(`✅ Recording saved to ${result.folder_used || selectedFolder}`, 'success');
             
             // Refresh notes list
             await this.refreshNotesList();
@@ -347,6 +254,7 @@ const VoiceNotesRecording = {
             VoiceNotesUI.displayNotes(notes);
         } catch (error) {
             console.error('Error refreshing notes list:', error);
+            // Don't show error to user as this is secondary functionality
         }
     },
 
@@ -368,7 +276,7 @@ const VoiceNotesRecording = {
             
             // Display results
             VoiceNotesUI.displayTranscription(result);
-            VoiceNotesUI.showStatus(`File transcribed and saved to ${result.folder_used || selectedFolder}`, 'success');
+            VoiceNotesUI.showStatus(`✅ File transcribed and saved to ${result.folder_used || selectedFolder}`, 'success');
             
             // Refresh notes list
             await this.refreshNotesList();
@@ -465,6 +373,9 @@ const VoiceNotesRecording = {
         }
     },
 
+    // REMOVED: testConcatenation method (no longer needed)
+    // The old testConcatenation method has been removed since we no longer use audio concatenation
+
     // Cleanup resources
     cleanup() {
         if (this.isRecording) {
@@ -473,24 +384,12 @@ const VoiceNotesRecording = {
         
         this.stopTimer();
         
-        // Cleanup VAD
-        if (this.vad) {
-            try {
-                this.vad.pause();
-            } catch (error) {
-                console.warn('Error stopping VAD:', error);
-            }
-        }
-        
         if (this.mediaRecorder && this.mediaRecorder.stream) {
             this.mediaRecorder.stream.getTracks().forEach(track => track.stop());
         }
         
         this.mediaRecorder = null;
         this.recordedChunks = [];
-        this.vad = null;
-        this.vadInitialized = false;
-        this.audioContext = null;
         this.isInitialized = false;
     },
 
@@ -499,7 +398,6 @@ const VoiceNotesRecording = {
         return {
             isRecording: this.isRecording,
             isInitialized: this.isInitialized,
-            vadInitialized: this.vadInitialized,
             duration: this.getRecordingDuration(),
             chunksCount: this.recordedChunks.length,
             recordedSize: this.recordedChunks.reduce((total, chunk) => total + chunk.size, 0),
