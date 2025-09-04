@@ -1,6 +1,10 @@
 // Voice Notes API Communication
 // templates/static/js/api.js
 
+//Description: This file manages all communication between the frontend and the backend API. 
+// It provides functions for sending audio data for transcription, 
+// fetching saved notes, and loading user-specific data.
+
 const VoiceNotesAPI = {
     // Current user code (set during initialization)
     currentUserCode: null,

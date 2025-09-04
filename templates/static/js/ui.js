@@ -1,6 +1,10 @@
 // Voice Notes UI Management
 // templates/static/js/ui.js
 
+//Description: This script is responsible for all dynamic updates to the user interface. 
+// It handles showing and hiding elements, displaying status messages, 
+// updating timers, and rendering the list of saved notes.
+
 const VoiceNotesUI = {
     // DOM element references (initialized on load)
     elements: {},

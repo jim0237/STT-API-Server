@@ -1,6 +1,9 @@
 // Voice Notes Main Application
 // templates/static/js/app.js
 
+//This script serves as the main entry point for the frontend application. 
+// It initializes all other JavaScript modules, manages the overall application state, 
+// and handles the core event listeners for user interactions.
 const VoiceNotesApp = {
     // Application state
     isInitialized: false,

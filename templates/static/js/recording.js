@@ -1,6 +1,12 @@
 // Voice Notes Audio Recording Management
 // templates/static/js/recording.js
 
+//Description: This file manages all aspects of audio recording. 
+// It handles microphone access, starting and stopping recordings, 
+// capturing audio data, and interacting with 
+// the Voice Activity Detection (VAD) library to detect speech.
+
+
 const VoiceNotesRecording = {
     // Recording state
     mediaRecorder: null,

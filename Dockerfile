@@ -37,7 +37,8 @@ RUN openssl req -x509 -newkey rsa:4096 -nodes \
     -subj '/CN=localhost'
 
 # Copy application files
-COPY main.py main-ui.py ./
+#COPY main.py main-ui.py ./
+COPY main-ui.py ./
 COPY templates templates/
 
 # Add healthcheck

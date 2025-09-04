@@ -11,6 +11,12 @@ from pydantic import BaseModel, Field
 import shutil
 from datetime import datetime
 from typing import List
+"""
+ This file contains the core backend logic for the application. 
+ It uses the FastAPI framework to create a web server that handles speech-to-text transcription,
+ user authentication, and file management.It also serves the main user interface to the client.
+"""
+# The purpose of this code is to provide a web interface for speech-to-text functionality using FastAPI and the Faster Whisper model.
 
 # Configure logging
 logging.basicConfig(

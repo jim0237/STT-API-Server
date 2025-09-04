@@ -1,6 +1,11 @@
 // Voice Notes Utility Functions
 // templates/static/js/utils.js
 
+
+//Description: This script provides a set of helper functions used throughout the frontend application. 
+// Its utilities include formatting dates and times, 
+// managing browser storage, and handling data validation.
+
 const VoiceNotesUtils = {
     // URL and User Code utilities
     getUserCodeFromURL() {
