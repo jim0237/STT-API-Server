@@ -6,7 +6,6 @@
 // capturing audio data, and interacting with 
 // the Voice Activity Detection (VAD) library to detect speech.
 
-
 const VoiceNotesRecording = {
     // Recording state
     mediaRecorder: null,
@@ -22,10 +21,15 @@ const VoiceNotesRecording = {
     chunkCounter: 0,
     checkpointResults: [],
 
-    // VAD Properties (NEW)
+    // VAD Properties
     vad: null,
     vadInitialized: false,
     audioContext: null,
+
+    // PHASE 2 ADDITIONS: VAD-based segmentation
+    vadSegments: [],           // Store audio segments from VAD
+    transcriptionQueue: [],    // Queue for processing segments
+    isProcessingQueue: false,  // Prevent concurrent transcription
 
     // Initialize microphone access and VAD
     async initialize() {
@@ -59,7 +63,25 @@ const VoiceNotesRecording = {
         }
     },
 
-    // Initialize Silero VAD (NEW)
+    // Get supported MIME type for recording
+    getSupportedMimeType() {
+        const types = [
+            'audio/webm',
+            'audio/mp4',
+            'audio/wav',
+            'audio/ogg'
+        ];
+        
+        for (const type of types) {
+            if (MediaRecorder.isTypeSupported(type)) {
+                return type;
+            }
+        }
+        
+        return 'audio/webm';
+    },
+
+    // Initialize Silero VAD
     async initializeVAD() {
         try {
             // Check if VAD library is loaded
@@ -82,7 +104,7 @@ const VoiceNotesRecording = {
                     console.log('VAD: Speech ended, audio length:', audio.length);
                     VoiceNotesUI.showStatus('VAD: Speech segment captured', 'success');
                     
-                    // For now, just log the audio data - we'll process it in Phase 3
+                    // PHASE 2: Use the improved handler
                     this.handleVADSegment(audio);
                 },
                 onVADMisfire: () => {
@@ -100,78 +122,127 @@ const VoiceNotesRecording = {
         }
     },
 
-    // Handle VAD segment (Phase 1: Just logging)
+    // PHASE 2: VAD-based audio collection (replaces broken MediaRecorder chunking)
     handleVADSegment(audioData) {
-        console.log('VAD Segment Details:', {
+        console.log('VAD Segment captured:', {
             length: audioData.length,
-            sampleRate: this.audioContext?.sampleRate || 'unknown',
             duration: `${(audioData.length / (this.audioContext?.sampleRate || 16000)).toFixed(2)}s`,
-            type: audioData.constructor.name
+            timestamp: new Date().toISOString()
         });
         
-        // Phase 1: Just show in UI that we received the segment
-        VoiceNotesUI.showStatus(`VAD captured ${(audioData.length / (this.audioContext?.sampleRate || 16000)).toFixed(1)}s segment`, 'success');
-    },
-
-    // Test VAD functionality (NEW)
-    async testVAD() {
-        if (!this.vadInitialized) {
-            VoiceNotesUI.showStatus('VAD not initialized', 'error');
-            return false;
-        }
-
-        try {
-            console.log('Testing VAD...');
-            VoiceNotesUI.showStatus('Testing VAD - speak into microphone', 'success');
-            
-            await this.vad.start();
-            console.log('VAD test started - speak to test speech detection');
-            
-            // Auto-stop test after 10 seconds
-            setTimeout(() => {
-                if (this.vad) {
-                    this.vad.pause();
-                    console.log('VAD test completed');
-                    VoiceNotesUI.showStatus('VAD test completed - check console for events', 'success');
-                }
-            }, 10000);
-            
-            return true;
-        } catch (error) {
-            console.error('VAD test failed:', error);
-            VoiceNotesUI.showStatus('VAD test failed: ' + error.message, 'error');
-            return false;
-        }
-    },
-
-    // Get supported MIME type for recording
-    getSupportedMimeType() {
-        const types = [
-            'audio/webm',
-            'audio/mp4',
-            'audio/wav',
-            'audio/ogg'
-        ];
+        // Convert VAD audio data to blob
+        const audioBlob = this.convertVADToBlob(audioData);
         
-        for (const type of types) {
-            if (MediaRecorder.isTypeSupported(type)) {
-                return type;
+        if (this.prototypeMode) {
+            // Store segment for processing
+            this.vadSegments.push({
+                blob: audioBlob,
+                chunkNumber: this.chunkCounter++,
+                timestamp: Date.now()
+            });
+            
+            // Add to transcription queue
+            this.queueForTranscription(audioBlob, this.chunkCounter - 1);
+            
+            VoiceNotesUI.showStatus(`VAD captured segment ${this.chunkCounter}`, 'success');
+        }
+    },
+
+    // PHASE 2: Convert VAD Float32Array to audio blob
+    convertVADToBlob(float32Array) {
+        // Convert Float32Array to WAV blob
+        const sampleRate = this.audioContext?.sampleRate || 16000;
+        const numChannels = 1;
+        const buffer = new ArrayBuffer(44 + float32Array.length * 2);
+        const view = new DataView(buffer);
+        
+        // WAV header
+        const writeString = (offset, string) => {
+            for (let i = 0; i < string.length; i++) {
+                view.setUint8(offset + i, string.charCodeAt(i));
             }
+        };
+        
+        writeString(0, 'RIFF');
+        view.setUint32(4, 36 + float32Array.length * 2, true);
+        writeString(8, 'WAVE');
+        writeString(12, 'fmt ');
+        view.setUint32(16, 16, true);
+        view.setUint16(20, 1, true);
+        view.setUint16(22, numChannels, true);
+        view.setUint32(24, sampleRate, true);
+        view.setUint32(28, sampleRate * 2, true);
+        view.setUint16(32, 2, true);
+        view.setUint16(34, 16, true);
+        writeString(36, 'data');
+        view.setUint32(40, float32Array.length * 2, true);
+        
+        // Convert float32 to int16
+        let offset = 44;
+        for (let i = 0; i < float32Array.length; i++) {
+            const sample = Math.max(-1, Math.min(1, float32Array[i]));
+            view.setInt16(offset, sample * 0x7FFF, true);
+            offset += 2;
         }
         
-        return 'audio/webm';
+        return new Blob([buffer], { type: 'audio/wav' });
     },
 
-    // Setup MediaRecorder event handlers (with prototype checkpoint logic)
+    // PHASE 2: Queue management for transcription
+    queueForTranscription(audioBlob, chunkNumber) {
+        this.transcriptionQueue.push({
+            blob: audioBlob,
+            chunkNumber: chunkNumber,
+            timestamp: Date.now()
+        });
+        
+        // Process queue if not already processing
+        if (!this.isProcessingQueue) {
+            this.processTranscriptionQueue();
+        }
+    },
+
+    // PHASE 2: Process transcription queue sequentially
+    async processTranscriptionQueue() {
+        if (this.isProcessingQueue || this.transcriptionQueue.length === 0) {
+            return;
+        }
+        
+        this.isProcessingQueue = true;
+        
+        while (this.transcriptionQueue.length > 0) {
+            const segment = this.transcriptionQueue.shift();
+            
+            try {
+                console.log(`Processing segment ${segment.chunkNumber} (${this.transcriptionQueue.length} remaining in queue)`);
+                VoiceNotesUI.showStatus(`Transcribing segment ${segment.chunkNumber}...`, 'success');
+                
+                // Upload to existing checkpoint endpoint
+                await this.uploadCheckpoint(segment.blob, segment.chunkNumber);
+                
+                console.log(`Segment ${segment.chunkNumber} uploaded successfully`);
+                
+            } catch (error) {
+                console.error(`Failed to process segment ${segment.chunkNumber}:`, error);
+                VoiceNotesUI.showStatus(`Segment ${segment.chunkNumber} failed`, 'error');
+            }
+            
+            // Small delay to prevent overwhelming the server
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        
+        this.isProcessingQueue = false;
+        console.log('Transcription queue processing complete');
+    },
+
+    // Setup MediaRecorder event handlers (MODIFIED for Phase 2)
     setupRecorderEvents() {
         this.mediaRecorder.ondataavailable = async (event) => {
             if (event.data.size > 0) {
                 this.recordedChunks.push(event.data);
                 
-                // Prototype checkpoint logic
-                if (this.prototypeMode) {
-                    await this.uploadCheckpoint(event.data, this.chunkCounter++);
-                }
+                // REMOVED: Broken prototype checkpoint logic
+                // The VAD-based approach handles this in handleVADSegment()
             }
         };
 
@@ -229,7 +300,7 @@ const VoiceNotesRecording = {
         }
     },
 
-    // Start recording
+    // Start recording (MODIFIED for Phase 2 VAD mode)
     startRecording() {
         if (!this.canRecord()) {
             VoiceNotesUI.showStatus('Cannot start recording', 'error');
@@ -239,12 +310,20 @@ const VoiceNotesRecording = {
         try {
             // Reset state
             this.recordedChunks = [];
+            this.vadSegments = [];        // PHASE 2: Reset VAD segments
+            this.transcriptionQueue = []; // PHASE 2: Reset queue
             this.isRecording = true;
             this.startTime = Date.now();
 
-            // Start MediaRecorder - modified for prototype
-            const chunkInterval = this.prototypeMode ? 20000 : 10; // 20 seconds for prototype, 10ms for normal
-            this.mediaRecorder.start(chunkInterval);
+            // Start MediaRecorder - MODIFIED for VAD
+            if (this.prototypeMode) {
+                // VAD mode: continuous recording, VAD handles segmentation
+                this.mediaRecorder.start();
+                console.log('Started VAD-based recording (continuous)');
+            } else {
+                // Normal mode: keep existing behavior
+                this.mediaRecorder.start(10);
+            }
             
             // Update UI
             VoiceNotesUI.setRecordingState(true);
@@ -433,6 +512,37 @@ const VoiceNotesRecording = {
         }
     },
 
+    // Test VAD functionality
+    async testVAD() {
+        if (!this.vadInitialized) {
+            VoiceNotesUI.showStatus('VAD not initialized', 'error');
+            return false;
+        }
+
+        try {
+            console.log('Testing VAD...');
+            VoiceNotesUI.showStatus('Testing VAD - speak into microphone', 'success');
+            
+            await this.vad.start();
+            console.log('VAD test started - speak to test speech detection');
+            
+            // Auto-stop test after 10 seconds
+            setTimeout(() => {
+                if (this.vad) {
+                    this.vad.pause();
+                    console.log('VAD test completed');
+                    VoiceNotesUI.showStatus('VAD test completed - check console for events', 'success');
+                }
+            }, 10000);
+            
+            return true;
+        } catch (error) {
+            console.error('VAD test failed:', error);
+            VoiceNotesUI.showStatus('VAD test failed: ' + error.message, 'error');
+            return false;
+        }
+    },
+
     // Enable prototype mode
     enablePrototypeMode() {
         this.prototypeMode = true;
@@ -500,7 +610,7 @@ const VoiceNotesRecording = {
         this.isInitialized = false;
     },
 
-    // Get recording statistics
+    // Get recording statistics (ENHANCED for Phase 2)
     getStats() {
         return {
             isRecording: this.isRecording,
@@ -511,7 +621,11 @@ const VoiceNotesRecording = {
             recordedSize: this.recordedChunks.reduce((total, chunk) => total + chunk.size, 0),
             prototypeMode: this.prototypeMode,
             sessionId: this.sessionId,
-            checkpointCount: this.checkpointResults.length
+            checkpointCount: this.checkpointResults.length,
+            // PHASE 2: Queue status
+            vadSegmentCount: this.vadSegments?.length || 0,
+            queueLength: this.transcriptionQueue?.length || 0,
+            isProcessingQueue: this.isProcessingQueue
         };
     }
 };
