@@ -301,7 +301,7 @@ const VoiceNotesRecording = {
     },
 
     // Start recording (MODIFIED for Phase 2 VAD mode)
-    startRecording() {
+    async startRecording() {
         if (!this.canRecord()) {
             VoiceNotesUI.showStatus('Cannot start recording', 'error');
             return false;
@@ -320,6 +320,8 @@ const VoiceNotesRecording = {
                 // VAD mode: continuous recording, VAD handles segmentation
                 this.mediaRecorder.start();
                 console.log('Started VAD-based recording (continuous)');
+                 // ADD THIS LINE for vad start in prototype mode:
+                await this.vad.start();
             } else {
                 // Normal mode: keep existing behavior
                 this.mediaRecorder.start(10);
