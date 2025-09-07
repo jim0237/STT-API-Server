@@ -126,7 +126,7 @@ const VoiceNotesApp = {
             this.startPrototypeRecording();
         });
         
-        // NEW: Transcribe chunks button
+        // PHASE 3: Modified transcribe chunks button to use VAD segment count instead of checkpoint count
         document.getElementById('transcribeChunksBtn').addEventListener('click', async () => {
             await this.transcribeAllChunks();
         });
@@ -243,8 +243,8 @@ const VoiceNotesApp = {
 
     // Prototype helper methods
     async startPrototypeRecording() {
-        // Record for exactly 60 seconds in 20-second chunks (3 chunks)
-        this.updatePrototypeStatus('Starting 60-second test recording (3x20s chunks)...');
+        // PHASE 3: Updated comment to reflect VAD-based segmentation instead of time-based chunks
+        this.updatePrototypeStatus('Starting 60-second test recording (VAD-based segments)...');
         
         // Start recording in prototype mode
         if (VoiceNotesRecording.canRecord()) {
@@ -262,7 +262,7 @@ const VoiceNotesApp = {
         }
     },
 
-    // NEW: Transcribe all chunks in current session
+    // PHASE 3: Modified to use VAD segment count instead of checkpoint count
     async transcribeAllChunks() {
         if (!VoiceNotesRecording.prototypeMode || !VoiceNotesRecording.sessionId) {
             this.updatePrototypeStatus('No prototype session to transcribe');
@@ -273,7 +273,13 @@ const VoiceNotesApp = {
             this.updatePrototypeStatus('Transcribing chunks with Whisper...');
             
             const sessionId = VoiceNotesRecording.sessionId;
-            const chunkCount = VoiceNotesRecording.checkpointResults.length;
+            // PHASE 3: Use VAD segment count instead of checkpoint count for more accurate counting
+            const chunkCount = VoiceNotesRecording.vadSegments.length;
+            
+            if (chunkCount === 0) {
+                this.updatePrototypeStatus('No VAD segments found to transcribe. Ensure recording captured speech segments.');
+                return;
+            }
             
             let transcriptionResults = [];
             
@@ -304,6 +310,7 @@ const VoiceNotesApp = {
             const successCount = transcriptionResults.filter(r => r.status === 'success').length;
             const failCount = transcriptionResults.filter(r => r.status === 'failed').length;
             
+            // PHASE 3: Enhanced status display showing success vs failure counts clearly
             let statusText = `Transcription complete: ${successCount} success, ${failCount} failed\n\n`;
             
             transcriptionResults.forEach((result, index) => {
@@ -317,7 +324,13 @@ const VoiceNotesApp = {
                 }
             });
             
-            statusText += '\nNext: Click "Assemble Text" to combine chunks';
+            // PHASE 3: Clear next step instructions based on transcription results
+            if (successCount > 0) {
+                statusText += '\nNext: Click "Assemble Text" to combine successful chunks';
+            } else {
+                statusText += '\nAll transcriptions failed - check audio segments and server logs';
+            }
+            
             this.updatePrototypeStatus(statusText);
             
         } catch (error) {
@@ -354,7 +367,7 @@ const VoiceNotesApp = {
                 VoiceNotesUI.elements.transcriptionSection.classList.add('visible');
                 
                 // Update prototype status
-                let statusText = `✅ SUCCESS: Combined ${result.chunk_count} chunks\n`;
+                let statusText = `SUCCESS: Combined ${result.chunk_count} chunks\n`;
                 statusText += `Final length: ${result.total_length} characters\n\n`;
                 statusText += 'Individual chunks:\n';
                 
@@ -362,13 +375,13 @@ const VoiceNotesApp = {
                     statusText += `${index + 1}. ${chunk.preview} (${chunk.length} chars)\n`;
                 });
                 
-                statusText += '\n📝 Final transcription displayed above. You can copy/edit it.';
+                statusText += '\nFinal transcription displayed above. You can copy/edit it.';
                 this.updatePrototypeStatus(statusText);
                 
-                VoiceNotesUI.showStatus('✅ Prototype test complete - check transcription above', 'success');
+                VoiceNotesUI.showStatus('Prototype test complete - check transcription above', 'success');
                 
             } else {
-                this.updatePrototypeStatus(`❌ Assembly failed: ${result.error}`);
+                this.updatePrototypeStatus(`Assembly failed: ${result.error}`);
             }
             
         } catch (error) {

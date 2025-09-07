@@ -247,6 +247,16 @@ const VoiceNotesRecording = {
         };
 
         this.mediaRecorder.onstop = () => {
+            // PHASE 3: Added VAD stop when recording ends in prototype mode
+            if (this.prototypeMode && this.vad) {
+                try {
+                    this.vad.pause();
+                    console.log('VAD stopped after recording ended');
+                } catch (error) {
+                    console.warn('Error stopping VAD after recording:', error);
+                }
+            }
+            
             this.processRecording();
         };
 
@@ -320,8 +330,21 @@ const VoiceNotesRecording = {
                 // VAD mode: continuous recording, VAD handles segmentation
                 this.mediaRecorder.start();
                 console.log('Started VAD-based recording (continuous)');
-                 // ADD THIS LINE for vad start in prototype mode:
-                await this.vad.start();
+                
+                // PHASE 3: Enhanced VAD start with error handling and status updates
+                if (this.vadInitialized && this.vad) {
+                    try {
+                        await this.vad.start();
+                        console.log('VAD started successfully for prototype recording');
+                        VoiceNotesUI.showStatus('VAD listening for speech...', 'success');
+                    } catch (vadError) {
+                        console.error('Failed to start VAD:', vadError);
+                        VoiceNotesUI.showStatus('VAD failed to start - recording will continue without segmentation', 'warning');
+                    }
+                } else {
+                    console.warn('VAD not initialized - prototype recording without segmentation');
+                    VoiceNotesUI.showStatus('VAD not available - recording without segmentation', 'warning');
+                }
             } else {
                 // Normal mode: keep existing behavior
                 this.mediaRecorder.start(10);
@@ -552,6 +575,41 @@ const VoiceNotesRecording = {
         this.chunkCounter = 0;
         this.checkpointResults = [];
         console.log('Prototype mode enabled, session:', this.sessionId);
+    },
+
+    // PHASE 3: Enhanced batch transcription trigger method for manual transcription of saved segments
+    async triggerBatchTranscription() {
+        if (!this.prototypeMode || !this.sessionId) {
+            console.error('No prototype session available for batch transcription');
+            return false;
+        }
+
+        try {
+            console.log(`Starting batch transcription for session ${this.sessionId} with ${this.vadSegments.length} segments`);
+            
+            // Check if we have VAD segments to transcribe
+            if (this.vadSegments.length === 0) {
+                console.warn('No VAD segments available for transcription');
+                VoiceNotesUI.showStatus('No audio segments to transcribe. Record first.', 'warning');
+                return false;
+            }
+
+            // Return segment count for external processing
+            return {
+                sessionId: this.sessionId,
+                segmentCount: this.vadSegments.length,
+                segments: this.vadSegments.map((seg, index) => ({
+                    chunkNumber: index,
+                    timestamp: seg.timestamp,
+                    size: seg.blob.size
+                }))
+            };
+
+        } catch (error) {
+            console.error('Batch transcription trigger failed:', error);
+            VoiceNotesUI.showStatus('Failed to start batch transcription', 'error');
+            return false;
+        }
     },
 
     // Upload checkpoint method
