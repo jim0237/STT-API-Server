@@ -433,7 +433,7 @@ async def transcribe_blob(audio: UploadFile = File(...)):
 @app.post("/v1/audio/transcriptions")
 async def openai_transcribe(
     file: UploadFile = File(...),
-    model: str = Form(...)
+    model_name: str = Form(..., alias="model")
 ):
     """
     OpenAI Whisper API-compatible transcription endpoint.
@@ -441,7 +441,7 @@ async def openai_transcribe(
 
     Parameters:
     - file: Audio file to transcribe (multipart/form-data)
-    - model: Model name (currently ignored, always uses whisper large-v3)
+    - model_name: Model name (currently ignored, always uses whisper large-v3)
 
     Returns:
     - JSON response in OpenAI format: {"text": "transcribed text"}
@@ -455,7 +455,7 @@ async def openai_transcribe(
             f.write(content)
 
         # Transcribe using Whisper model
-        logger.info(f"OpenAI-compatible endpoint - Transcribing: {file.filename} (model param: {model})")
+        logger.info(f"OpenAI-compatible endpoint - Transcribing: {file.filename} (model param: {model_name})")
         segments, info = model.transcribe(
             temp_path,
             beam_size=5,
