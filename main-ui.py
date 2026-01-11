@@ -396,7 +396,7 @@ async def transcribe_blob(audio: UploadFile = File(...)):
     try:
         # Save uploaded blob
         audio_path = os.path.join(UPLOAD_DIR, "recorded_audio.wav")
-        
+
         with open(audio_path, "wb") as f:
             content = await audio.read()
             f.write(content)
@@ -408,19 +408,19 @@ async def transcribe_blob(audio: UploadFile = File(...)):
             beam_size=5,
             word_timestamps=True
         )
-        
+
         # Format results
         transcription = " ".join([segment.text for segment in segments])
-        
+
         # Cleanup
         os.unlink(audio_path)
-        
+
         return {
             "text": transcription,
             "language": info.language,
             "language_probability": info.language_probability
         }
-    
+
     except Exception as e:
         logger.error(f"Error transcribing recorded audio: {str(e)}")
         if 'audio_path' in locals() and os.path.exists(audio_path):
@@ -428,6 +428,56 @@ async def transcribe_blob(audio: UploadFile = File(...)):
                 os.unlink(audio_path)
             except Exception as cleanup_error:
                 logger.warning(f"Failed to cleanup file after error: {str(cleanup_error)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/v1/audio/transcriptions")
+async def openai_transcribe(
+    file: UploadFile = File(...),
+    model: str = Form(...)
+):
+    """
+    OpenAI Whisper API-compatible transcription endpoint.
+    Expected by CAAL virtual assistant and other OpenAI-compatible clients.
+
+    Parameters:
+    - file: Audio file to transcribe (multipart/form-data)
+    - model: Model name (currently ignored, always uses whisper large-v3)
+
+    Returns:
+    - JSON response in OpenAI format: {"text": "transcribed text"}
+    """
+    try:
+        # Save uploaded file temporarily
+        temp_path = os.path.join(UPLOAD_DIR, file.filename)
+
+        with open(temp_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+
+        # Transcribe using Whisper model
+        logger.info(f"OpenAI-compatible endpoint - Transcribing: {file.filename} (model param: {model})")
+        segments, info = model.transcribe(
+            temp_path,
+            beam_size=5,
+            word_timestamps=True
+        )
+
+        # Format as OpenAI response (simple format)
+        transcription = " ".join([segment.text for segment in segments])
+
+        # Cleanup temp file
+        os.unlink(temp_path)
+
+        # Return OpenAI-compatible response format
+        return {"text": transcription}
+
+    except Exception as e:
+        logger.error(f"OpenAI endpoint transcription error: {str(e)}")
+        if 'temp_path' in locals() and os.path.exists(temp_path):
+            try:
+                os.unlink(temp_path)
+            except:
+                pass
         raise HTTPException(status_code=500, detail=str(e))
 
 def _get_notes_from_folder(folder_path: str, folder_name: str) -> List[dict]:
